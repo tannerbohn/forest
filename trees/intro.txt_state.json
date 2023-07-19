@@ -1,0 +1,290 @@
+[
+    [
+        1,
+        "Moving around",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        2,
+        "up and down",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        3,
+        "ou want to focus on something)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        4,
+        "jumping to a random note: r",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        5,
+        "o exit the forest, type Ctrl-C",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        6,
+        "Creating new notes",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        7,
+        " below where you want the note",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        8,
+        "+Tab to indent or de-indent it",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        9,
+        "ook! This branch is collapsed!",
+        [
+            "collapsed",
+            "2023-07-19"
+        ]
+    ],
+    [
+        10,
+        "can have so many things inside",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        11,
+        "#Editing notes",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        12,
+        "Enter when you're done editing",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        13,
+        " again to toggle status) #DONE",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        14,
+        "d de-indent: tab and shift+tab",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        15,
+        "ookmarking: b (also togglable)",
+        [
+            [
+                "bookmark",
+                1689772284.015001
+            ],
+            "2023-07-19"
+        ]
+    ],
+    [
+        16,
+        "adding #hashtags",
+        [
+            "collapsed",
+            "2023-07-19"
+        ]
+    ],
+    [
+        17,
+        " WORDS are used as the hashtag",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        18,
+        " are called \"linking\" hashtags",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        19,
+        "te (currently no undo feature)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        20,
+        "ace on any note with children)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        21,
+        "de (enter command mode with c)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        22,
+        "rching for a note: c+? <query>",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        23,
+        "looping between bookmarks: c+b",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        24,
+        "+> (to find the linking notes)",
+        [
+            "collapsed",
+            "2023-07-19"
+        ]
+    ],
+    [
+        25,
+        "es is the \"Editing notes\" note",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        26,
+        "le through the \"linking\" note.",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        27,
+        " Enter to choose where to stop",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        28,
+        "Moving notes",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        29,
+        "e note text to your clipboard)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        30,
+        "ut the notes, and press Ctrl-V",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        31,
+        "el your copy action, press Esc",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        32,
+        "t a note with Tab or Shift+Tab",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        33,
+        "Saving changes (hit the s key)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        34,
+        "Using the journal",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        35,
+        "th c, and then type j+ <entry>",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        36,
+        "ranches for the year and month",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        37,
+        "th the blue strip on the left?",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        38,
+        "t older, they will slowly fade",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        39,
+        "Encrypting and decrypting",
+        [
+            "collapsed",
+            "2023-07-19"
+        ]
+    ],
+    [
+        40,
+        "... will be explained later",
+        [
+            "2023-07-19"
+        ]
+    ]
+]

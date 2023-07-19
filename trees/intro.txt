@@ -1,24 +1,30 @@
 - Moving around
 	- up and down
-	- left (move up in the tree), right (move deeper into the tree)
+	- left (move up in the tree), right (move deeper into the tree -- useful if you want to focus on something)
 	- jumping to a random note: r
+	- to exit the forest, type Ctrl-C
 - Creating new notes
 	- press Enter below where you want the note
 	- while typing the note text, you can type Tab or Shift+Tab to indent or de-indent it
 - Look! This branch is collapsed!
 	- It can have so many things inside
-- Editing notes
-	- press a or backspace to edit a note
+- #Editing notes
+	- press a or backspace to edit a note. Press Enter when you're done editing
 	- marking as complete: x (this will also dim the children of the node. Press x again to toggle status) #DONE
 	- indent and de-indent: tab and shift+tab
 	- bookmarking: b (also togglable)
 	- adding #hashtags
+		- When the hashtag occurs at the start of the note (like the parent note of this branch), the FIRST 3 WORDS are used as the hashtag
+		- When the hashtag occurs anywhere else, use dashes (-) in place of spaces. These are called "linking" hashtags
 	- to delete a note, press delete (currently no undo feature)
 - Collapsing (press space on any note with children)
 - Command mode (enter command mode with c)
 	- searching for a note: c+? <query>
 	- looping between bookmarks: c+b
-	- finding hashtag matches: c+< or c+>
+	- finding hashtag matches: c+< (to find the source) or c+> (to find the linking notes)
+		- The < command will let you go to the "source" note. A hashtag source is a note that starts with a hashtag. For example, the source for #editing-notes is the "Editing notes" note
+		- The > command will let you cycle through the "linking" note.
+		- When cycling through matches, press Enter to choose where to stop
 - Moving notes
 	- press Ctrl+X on as many notes as you like (this will also add the note text to your clipboard)
 	- move to the location you want to put the notes, and press Ctrl-V

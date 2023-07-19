@@ -3,6 +3,8 @@ A minimal tree-based note interface made with love.
 
 <p align="center">
   <img src="assets/forest.png" width="350" title="Forest">
+  <br>
+  <img src="assets/screenshot.png" title="Forest">
 </p>
 
 ## Step 1: Install requirements

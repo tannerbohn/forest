@@ -1,0 +1,24 @@
+- Moving around
+	- up and down
+	- left (move up)
+	- right (deeper)
+	- jumping to a random note: r
+- Creating new notes
+- Editing notes
+	- marking as complete: x
+	- indent and de-indent: tab and shift+tab
+	- bookmarking: b
+	- adding hashtags
+- Deleting notes
+	- delete
+- Collapsing
+	- space
+- Command mode
+	- searching for a note: c+? <query>
+	- looping between bookmarks: c+b
+	- finding hashtag matches: c+< or c+>
+- Moving notes
+- Saving changes
+- Copying and pasting
+- Journal
+- Encrypting and decrypting

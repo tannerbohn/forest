@@ -1,24 +1,34 @@
 - Moving around
 	- up and down
-	- left (move up)
-	- right (deeper)
+	- left (move up in the tree), right (move deeper into the tree)
 	- jumping to a random note: r
 - Creating new notes
+	- press Enter below where you want the note
+	- while typing the note text, you can type Tab or Shift+Tab to indent or de-indent it
+- Look! This branch is collapsed!
+	- It can have so many things inside
 - Editing notes
-	- marking as complete: x
+	- press a or backspace to edit a note
+	- marking as complete: x (this will also dim the children of the node. Press x again to toggle status) #DONE
 	- indent and de-indent: tab and shift+tab
-	- bookmarking: b
-	- adding hashtags
-- Deleting notes
-	- delete
-- Collapsing
-	- space
-- Command mode
+	- bookmarking: b (also togglable)
+	- adding #hashtags
+	- to delete a note, press delete (currently no undo feature)
+- Collapsing (press space on any note with children)
+- Command mode (enter command mode with c)
 	- searching for a note: c+? <query>
 	- looping between bookmarks: c+b
 	- finding hashtag matches: c+< or c+>
 - Moving notes
-- Saving changes
-- Copying and pasting
-- Journal
+	- press Ctrl+X on as many notes as you like (this will also add the note text to your clipboard)
+	- move to the location you want to put the notes, and press Ctrl-V
+	- if you want to cancel your copy action, press Esc
+	- you can indent or de-indent a note with Tab or Shift+Tab
+- Saving changes (hit the s key)
+- Using the journal
+	- to add a journal entry (a journal branch will automatically be created), enter command mode with c, and then type j+ <entry>
+	- journal entries are automatically sorted into branches for the year and month
+- What's up with the blue strip on the left?
+	- This strip reflects the age of a note. New ones are bright blue, and as the get older, they will slowly fade
 - Encrypting and decrypting
+	- ... will be explained later

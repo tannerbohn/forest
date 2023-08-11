@@ -17,14 +17,11 @@ from cryptography.fernet import Fernet
 
 """
 TODO:
+    - keep track of the most jumped-to nodes, and make a quick-jump bar (attach to numbers 0-9?)
     - highlight all question marks, not just the first one
         - https://stackoverflow.com/questions/4664850/how-to-find-all-occurrences-of-a-substring
     - have easy way to see all the different commands (persistent bar somewhere?)
         - on status bar, show possible commands. When in command mode, show command patterns
-    - create github repo to share
-    - create config file
-        - color scheme
-        - special words/regexs to highlight
 """
 
 
@@ -48,6 +45,7 @@ MONTH_ORDER = [
     "November",
     "December",
 ]
+
 
 class EncryptionManager:
     def __init__(self):
@@ -893,12 +891,7 @@ class NoteTree:
                 message.strip() == ">"
             )  # given slug, find hashtag references
 
-            if (
-                query_mode
-                or bookmark_mode
-                or jump_to_citations
-                or jump_to_sources
-            ):
+            if query_mode or bookmark_mode or jump_to_citations or jump_to_sources:
                 if query_mode:
                     query = message[1:].strip()
                     matching_nodes = self.find_matches(query=query)
@@ -992,30 +985,23 @@ class NoteTree:
                 bookmarked_node = node.find_bookmarked()
 
                 is_last_child = node.parent.children[-1] == node
-                text = (("    ") * (node.depth - root_depth - 1)) + node.get_text()
+
+                text = node.get_text()
                 if node.is_collapsed:
                     text = text + " [•••]"
 
-                remaining_text = text
-                is_first_chunk = True
-                nb_chunks = 0
-                while remaining_text:
-                    line_start = age_text
-                    if is_first_chunk:
-                        is_first_chunk = False
+                indent_text = age_text + (("    ") * (node.depth - root_depth - 1))
+                chunks = textwrap.wrap(
+                    text,
+                    width=curses.COLS,
+                    initial_indent=indent_text,
+                    subsequent_indent=indent_text + "   ",
+                )
 
-                    max_chunk_size = curses.COLS - 0 - (line_num_chars)
-                    # TODO: modify this to avoid splitting words under n chars
-                    chunk = remaining_text[:max_chunk_size]
-                    chunk = (line_start + chunk).ljust(curses.COLS)
-                    remaining_text = remaining_text[max_chunk_size:]
-                    remaining_text = (
-                        (("    ") * (node.depth - root_depth - 1))
-                        + "   "
-                        + remaining_text
-                    )
-                    remaining_text = remaining_text.rstrip()
+                nb_chunks = len(chunks)
 
+                for chunk in chunks:
+                    chunk = chunk.ljust(curses.COLS)
                     # first draw the full text
                     try:
                         formatting = curses.A_NORMAL
@@ -1082,7 +1068,6 @@ class NoteTree:
                                 formatting | self.palette.question,
                             )
 
-                        nb_chunks += 1
                     except:
                         raise Exception(f"[{curses.LINES}/{curses.COLS}]\n{chunk}")
 
@@ -1107,7 +1092,7 @@ class NoteTree:
                             coloring = self.palette.bookmark
                         if coloring is not None:
                             formatting = formatting | coloring
-                            self.stdscr.addstr(line_num, 1, "🮋", formatting)
+                            self.stdscr.addstr(line_num, 1, "💠", formatting)
                     except:
                         raise Exception(f"[{curses.LINES}/{curses.COLS}]\n{chunk}")
 
@@ -1223,6 +1208,42 @@ class NoteTree:
 class Palette:
     i = 50  # do not start at 0, because on some terminals, it messes up colours
 
+    def __init__(self, stdscr, colour_scheme):
+        self.background = self.create_color(colour_scheme["background"])
+        self.light_background = self.create_color(colour_scheme["top_bar_background"])
+
+        self.default_text = self.create_color(colour_scheme["default_text"])
+        self.highlight = self.create_color(colour_scheme["primary_highlight"])
+        self.highlight_2 = self.create_color(colour_scheme["secondary_highlight"])
+
+        # set the default background and foreground
+        stdscr.bkgd(" ", self.create_pair(self.default_text, self.background))
+
+        self.top_bar = self.create_pair(self.default_text, self.light_background)
+
+        self.bookmark = self.create_pair(self.highlight_2, self.background)
+
+        self.age_0_colour = self.create_color(colour_scheme["age_0"])
+        self.age_1_colour = self.create_color(colour_scheme["age_1"])
+        self.age_2_colour = self.create_color(colour_scheme["age_2"])
+        self.age_3_colour = self.create_color(colour_scheme["age_3"])
+        self.age_4_colour = self.create_color(colour_scheme["age_4"])
+
+        self.age_0 = self.create_pair(self.age_0_colour, self.background)
+        self.age_1 = self.create_pair(self.age_1_colour, self.background)
+        self.age_2 = self.create_pair(self.age_2_colour, self.background)
+        self.age_3 = self.create_pair(self.age_3_colour, self.background)
+        self.age_4 = self.create_pair(self.age_4_colour, self.background)
+
+        self.hashtag = self.create_pair(self.highlight, self.background)
+        self.focus_arrow = self.bookmark
+        self.nonfocus_arrow = self.age_3
+        self.status_section = self.create_pair(self.highlight, self.light_background)
+        self.collapse_indicator = self.create_pair(self.highlight_2, self.background)
+
+        question_colour = self.highlight_2
+        self.question = self.create_pair(question_colour, self.background)
+
     def create_color(self, color):
         if isinstance(color, str) and color[0] == "#":
             color = color[1:]
@@ -1239,42 +1260,6 @@ class Palette:
         self.i += 1
         curses.init_pair(self.i, foreground, background)
         return curses.color_pair(self.i)
-
-    def __init__(self, stdscr):
-        self.background = self.create_color("#1f170d")
-        self.light_background = self.create_color("#574832")
-
-        self.default_text = self.create_color("#c9b597")
-        self.highlight = self.create_color("#00b3ff")
-        self.highlight_2 = self.create_color("#ffffff")
-
-        # set the default background and foreground
-        stdscr.bkgd(" ", self.create_pair(self.default_text, self.background))
-
-        self.top_bar = self.create_pair(self.default_text, self.light_background)
-
-        self.bookmark = self.create_pair(self.highlight_2, self.background)
-
-        self.age_0_colour = self.create_color("#00b3ff")
-        self.age_1_colour = self.create_color("#0793cd")
-        self.age_2_colour = self.create_color("#0d749d")
-        self.age_3_colour = self.create_color("#13556d")
-        self.age_4_colour = self.create_color("#19363d")
-
-        self.age_0 = self.create_pair(self.age_0_colour, self.background)
-        self.age_1 = self.create_pair(self.age_1_colour, self.background)
-        self.age_2 = self.create_pair(self.age_2_colour, self.background)
-        self.age_3 = self.create_pair(self.age_3_colour, self.background)
-        self.age_4 = self.create_pair(self.age_4_colour, self.background)
-
-        self.hashtag = self.create_pair(self.highlight, self.background)
-        self.focus_arrow = self.bookmark
-        self.nonfocus_arrow = self.age_3
-        self.status_section = self.create_pair(self.highlight, self.light_background)
-        self.collapse_indicator = self.create_pair(self.highlight_2, self.background)
-
-        question_colour = self.highlight_2
-        self.question = self.create_pair(question_colour, self.background)
 
 
 def trigram_similarity(w_a, w_b, coverage_weight=0.5):
@@ -1298,8 +1283,18 @@ def trigram_similarity(w_a, w_b, coverage_weight=0.5):
 
     return coverage * coverage_weight + similarity * (1 - coverage_weight)
 
+
 def main(stdscr):
-    palette = Palette(stdscr)
+    with open("colour_schemes.json", "r") as f:
+        colour_schemes = json.load(f)
+
+    with open("config.json", "r") as f:
+        config = json.load(f)
+
+    colour_scheme = colour_schemes[config.get("colour_scheme", "brown_and_blue")]
+    assert colour_scheme
+
+    palette = Palette(stdscr, colour_scheme)
 
     T = NoteTree(notes_filename, stdscr, palette)
 

@@ -1,0 +1,26 @@
+{
+    "brown_and_blue": {
+        "background": "#1f170d",
+        "top_bar_background": "#574832",
+        "default_text": "#c9b597",
+        "primary_highlight": "#00b3ff",
+        "secondary_highlight": "#ffffff",
+        "age_0":"#00b3ff",
+        "age_1":"#0793cd",
+        "age_2":"#0d749d",
+        "age_3":"#13556d",
+        "age_4":"#19363d"
+    },
+    "blueprint": {
+        "background": "#193C4A",
+        "top_bar_background": "#08B1EB",
+        "default_text": "#FFFFFF",
+        "primary_highlight": "#08B1EB",
+        "secondary_highlight": "#FFFFFF",
+        "age_0":"#00b3ff",
+        "age_1":"#0793cd",
+        "age_2":"#0d749d",
+        "age_3":"#13556d",
+        "age_4":"#19363d"
+    }
+}

@@ -2,7 +2,7 @@
 A minimal tree-based note interface made with love.
 
 <p align="center">
-  <img src="assets/forest.png" width="350" title="Forest">
+  <img src="assets/forest_wide.png" title="Forest">
   <br>
   <img src="assets/screenshot.png" title="Forest">
 </p>

@@ -2,8 +2,6 @@
 A minimal tree-based note interface made with love.
 
 <p align="center">
-  <img src="assets/forest.png" width="350" title="Forest">
-  <br>
   <img src="assets/screenshot.png" title="Forest">
 </p>
 
@@ -15,11 +13,10 @@ A minimal tree-based note interface made with love.
 
 `python3 forest.py trees/intro.txt`
 
-Or, watch the intro video here: TODO
 
 ## Step 3: Create your own tree!
 
 ```
 touch trees/my_new_tree.txt
-python3 forest.py trees/my_new_tree.txt
+python3 src/forest.py trees/my_new_tree.txt
 ```

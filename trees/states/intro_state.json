@@ -1,0 +1,367 @@
+[
+    [
+        1,
+        "Moving around",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        2,
+        "up and down",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        3,
+        "ou want to focus on something)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        4,
+        "jumping to a random note: r",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        5,
+        " have saved any changes first!",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        6,
+        "Creating new notes",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        7,
+        " below where you want the note",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        8,
+        "tart to indent or de-indent it",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        9,
+        "ook! This branch is collapsed!",
+        [
+            "collapsed",
+            "2023-07-19"
+        ]
+    ],
+    [
+        10,
+        "can have so many things inside",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        11,
+        "#Editing notes",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        12,
+        " Or Esc to cancel your changes",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        13,
+        " again to toggle status) #DONE",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        14,
+        "d de-indent: tab and shift+tab",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        15,
+        "to bookmark a note, type b",
+        [
+            "collapsed",
+            [
+                "bookmark",
+                0
+            ],
+            "2023-07-19"
+        ]
+    ],
+    [
+        16,
+        "same key will hide this window",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        17,
+        "u need to refer to frequently)",
+        [
+            "2024-01-15"
+        ]
+    ],
+    [
+        18,
+        " of 10 bookmarks are supported",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        19,
+        "th the bookmark (found with `)",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        20,
+        "adding #hashtags",
+        [
+            "collapsed",
+            "2023-07-19"
+        ]
+    ],
+    [
+        21,
+        " WORDS are used as the hashtag",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        22,
+        " are called \"linking\" hashtags",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        23,
+        "te (currently no undo feature)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        24,
+        "mong its siblings, use u and d",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        25,
+        "ace on any note with children)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        26,
+        "de (enter command mode with :)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        27,
+        "arching for a note: :? <query>",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        28,
+        ":> (to find the linking notes)",
+        [
+            "collapsed",
+            "2023-07-19"
+        ]
+    ],
+    [
+        29,
+        "es is the \"Editing notes\" note",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        30,
+        "le through the \"linking\" note.",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        31,
+        " Enter to choose where to stop",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        32,
+        "Copying and pasting notes",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        33,
+        "e note text to your clipboard)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        34,
+        "ut the notes, and press Ctrl-V",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        35,
+        "el your copy action, press Esc",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        36,
+        "nges (hit the s key, or :save)",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        37,
+        "Using the journal",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        38,
+        "y be created), use :j+ <entry>",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        39,
+        "ranches for the year and month",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        40,
+        "th the blue strip on the left?",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        41,
+        "t older, they will slowly fade",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        42,
+        "Encrypting and decrypting",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        43,
+        "in the root note of the branch",
+        [
+            "2023-07-19"
+        ]
+    ],
+    [
+        44,
+        "prompted for an encryption key",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        45,
+        "f you haven't done so recently",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        46,
+        "Fernet; Fernet.generate_key()`",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        47,
+        "make sure you don't lose this",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        48,
+        "Colour Scheme",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        49,
+        "n entry in colour_schemes.json",
+        [
+            "2024-01-13"
+        ]
+    ],
+    [
+        50,
+        "Executable notes",
+        [
+            "2024-01-15"
+        ]
+    ],
+    [
+        51,
+        "ents in a subprocess with :run",
+        [
+            "2024-01-15"
+        ]
+    ]
+]

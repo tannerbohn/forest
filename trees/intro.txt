@@ -14,6 +14,7 @@
 	- indent and de-indent: tab and shift+tab
 	- to bookmark a note, type b
 		- to see existing bookmarks, type `. Hitting the same key will hide this window
+			- in the bottom of this window, whatever bookmark 0 is, will be displayed (good for things you need to refer to frequently)
 		- a maximum of 10 bookmarks are supported
 		- to jump to a bookmark, hit the number key associated with the bookmark (found with `)
 	- adding #hashtags
@@ -46,3 +47,5 @@
 		- make sure you don't lose this
 - Colour Scheme
 	- To change the colour scheme, change the value in config.json to the name of an entry in colour_schemes.json
+- Executable notes
+	- if a note starts with "!", then you can execute the contents in a subprocess with :run

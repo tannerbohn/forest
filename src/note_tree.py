@@ -1,416 +1,33 @@
-# Author: Tanner Bohn
-
-import _thread
-import argparse
 import curses
 import json
 import os
 import random
 import re
 import textwrap
-import time
-from curses.textpad import Textbox, rectangle
+from curses.textpad import Textbox
 from datetime import datetime
 
 import pyclip
-from cryptography.fernet import Fernet
 
-"""
-TODO:
-    - keep track of the most jumped-to nodes, and make a quick-jump bar (attach to numbers 0-9?)
-    - highlight all question marks, not just the first one
-        - https://stackoverflow.com/questions/4664850/how-to-find-all-occurrences-of-a-substring
-    - have easy way to see all the different commands (persistent bar somewhere?)
-        - on status bar, show possible commands. When in command mode, show command patterns
-"""
+from encryption_manager import encryption_manager
+from node import Node
+from utils import MONTH_ORDER, determine_state_filename, trigram_similarity
 
-
-parser = argparse.ArgumentParser(description="Run Note Interface")
-parser.add_argument("notes", help="a notes file (.txt)")
-args = parser.parse_args()
-notes_filename = args.notes
-
-
-MONTH_ORDER = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-]
-
-
-class EncryptionManager:
-    def __init__(self):
-        self.tree = None
-        self.stdscr = None
-        self.key = None
-        self.key_get_time = 0
-        self.key_ttl = 60 * 3
-
-    def set_tree(self, tree):
-        self.tree = tree  # need access to tree in order to call encryption
-
-    def set_stdscr(self, stdscr):
-        self.stdscr = stdscr
-
-    def encrypt(self, message):
-        self.ensure_key()
-        if not self.key:
-            return message
-        return (
-            Fernet(self.key).encrypt(message.encode()).decode()
-        )  # encrypt but return a string
-
-    def decrypt(self, message):
-        self.ensure_key()
-        if not self.key:
-            return message
-        return Fernet(self.key).decrypt(message.encode()).decode()
-
-    def ensure_key(self):
-        if self.key:
-            self.keep_alive()
-        else:
-            key = self.ask_for_key()
-            if key.endswith("="):
-                self.key = key.encode()
-                self.keep_alive()  # if we've requested the key, let it live longer
-
-    def ask_for_key(self):
-        y = curses.LINES // 2
-        x_start = curses.COLS // 4
-        edit_rect_details = (
-            y - 1,  # upper left y
-            x_start - 1,  # upper left x
-            y + 1,  # bottom right y
-            curses.COLS - x_start - 1,  # bottom right x
-        )
-        rectangle(self.stdscr, *edit_rect_details)
-        self.stdscr.refresh()
-
-        editwin = curses.newwin(
-            1,  # height
-            curses.COLS // 2,  # width
-            y,  # start y
-            x_start,  # start x
-        )
-
-        box = Textbox(editwin, insert_mode=True)
-
-        accumulated_input = []
-
-        # Let the user edit until Ctrl-G or Enter is struck.
-        def key_validator(ch):
-            if ch in [7, 10]:
-                return 7  # for ctrl-G/terminate
-            if ch == curses.KEY_BACKSPACE:
-                try:
-                    accumulated_input.pop()
-                except IndexError:
-                    pass
-                return ch
-            accumulated_input.append(chr(ch))
-            return "*"
-
-        box.edit(key_validator)
-
-        message = "".join(accumulated_input)
-
-        return message
-
-    @staticmethod
-    def is_encrypted(message):
-        return message.startswith("gAAAAAB")
-
-    def keep_alive(self):
-        if self.key:
-            self.key_get_time = time.time()
-
-    def step(self):
-        while True:
-            if self.key and time.time() - self.key_get_time > self.key_ttl:
-                self.tree.encrypt()
-                self.key = None
-
-            time.sleep(15)
-
-    def run(self):
-        _thread.start_new_thread(self.step, tuple())
-
-
-class Node:
-    def __init__(self, parent, text, depth=0, is_collapsed=False):
-        self.parent = parent
-        self.text = text
-        self.children = []
-        self.depth = depth
-        self.is_collapsed = is_collapsed
-        self.edit_mode = False
-
-        self.bookmark_timestamp = None
-
-        self.creation_time = datetime.now()
-
-        self.index = 0
-
-    def get_slug(self):
-        """
-        TODO: make this a property that only needs to be computed once? (and upon any change to the text)
-        """
-        if not self.text.startswith("#"):
-            return
-        # the slug consists of the first few words
-        words = self.text[1:].split()
-        words = [w for w in words if not w[0] == "#"]
-        return "-".join(words[:3]).lower()
-
-    def get_hashtags(self):
-        if not "#" in self.text:
-            return []
-
-        matches = re.findall(r"#([a-z\-]+)", self.text)
-        return matches
-
-    def get_path(self, include_self):
-        parts = []
-        if include_self:
-            parts.append(self.text)
-        cur_node = self.parent
-        while cur_node:
-            parts.append(cur_node.text)
-            cur_node = cur_node.parent
-
-        return parts[::-1]
-
-    def toggle_bookmark(self):
-        if self.bookmark_timestamp is None:
-            self.bookmark_timestamp = datetime.now().timestamp()
-        else:
-            self.bookmark_timestamp = None
-
-    def is_done(self):
-        if not self.parent:
-            return "#DONE" in self.text
-        return "#DONE" in self.text or self.parent.is_done()
-
-    def toggle_done(self):
-        if encryption_manager.is_encrypted(self.text):
-            return
-
-        words = self.text.split()
-
-        if not self.is_done():
-            words.append("#DONE")
-            self.text = " ".join(words)
-        else:
-            if "#DONE" in words:
-                words.remove("#DONE")
-                self.text = " ".join(words)
-            else:
-                words.append("#DONE")
-                self.text = " ".join(words)
-            # if it is done, but there's no #DONE in the text, it means that a parent/ancestor is marked as done,
-            #   in which case, don't do anything
-
-    def is_bookmarked(self):
-        return self.bookmark_timestamp is not None
-
-    def get_days_old(self, recurse=False):
-        days = (datetime.now() - self.creation_time).days
-        if self.is_collapsed or recurse:
-            return min([days] + [c.get_days_old(recurse=True) for c in self.children])
-        else:
-            return days
-
-    def get_text(self, indentation=True):
-        text = self.text
-        if encryption_manager.is_encrypted(self.text):
-            text = "█" * (len(self.text) // 5)
-        if indentation:
-            return "► " + text
-        else:
-            return text
-
-    def toggle_collapse(self):
-        self.is_collapsed = not self.is_collapsed
-
-    def paste_node_here(self, node):
-        if node == self:
-            return
-        node.parent.children.remove(node)
-
-        node.parent = self
-
-        self.children.insert(0, node)
-        self.update_child_depth()
-
-    def add_child(self, text, top=False, index=None):
-        child = Node(self, text, self.depth + 1)
-        if top:
-            self.children = [child] + self.children
-        elif index is not None:
-            self.children.insert(index, child)
-        else:
-            self.children.append(child)
-        return child
-
-    def add_directly_below(self, is_context):
-        # if the node doesn't have a parent, that can only mean it's the root node
-        if not self.parent:
-            return
-
-        # if the node is the context node, that means that if we create a sibling node to it,
-        #   we will be taken outside the current branch of the tree. Thus, any new node needs to
-        #   be a child of the current/context node
-        if is_context:
-            new_node = self.add_child("", top=True)
-
-        else:
-            sibling_index = self.parent.children.index(self)
-            new_node = self.parent.add_child("", index=sibling_index + 1)
-            # if we create a new node DIRECTLY below the current node, that means we get between it and it's children,
-            #   which means that the new node needs to adopt the children
-            new_node.adopt_children_from_node(self)
-
-        return new_node
-
-    def find_bookmarked(self):
-        if self.is_bookmarked():
-            return self
-        for c in self.children:
-            n = c.find_bookmarked()
-            if n:
-                return n
-
-    def delete_branch(self):
-        if not self.parent:
-            return
-        self.parent.children.remove(self)
-
-    def delete_single(self):
-        if not self.parent:
-            return
-
-        if self not in self.parent.children:
-            # something went wrong...
-            return
-
-        if self.parent.children and self.parent.children.index(self) != 0:
-            # pass to preceding sibling
-            sibling = self.parent.children[self.parent.children.index(self) - 1]
-            sibling.adopt_children_from_node(self)
-            self.parent.children.remove(self)
-
-        else:
-            # pass to parent
-            self.parent.adopt_children_from_node(self)
-            self.parent.children.remove(self)
-
-    def update_child_depth(self):
-        for c in self.children:
-            c.depth = self.depth + 1
-            c.update_child_depth()
-
-    def adopt_children_from_node(self, node, only_uncollapsed=True):
-        if node.is_collapsed:
-            return
-        self.children.extend(node.children)
-        self.children = sorted(self.children, key=lambda k: k.index)
-        for c in self.children:
-            c.parent = self
-        node.children = []
-        self.update_child_depth()
-
-    def move_shallower(self):
-        # move up a level in the hierarchy
-        parent = self.parent
-        if parent is None:
-            return
-        grandparent = parent.parent
-        if grandparent is None:
-            return
-        self.depth -= 1
-        self.update_child_depth()
-        parent.children.remove(self)
-        self.parent = grandparent
-        grandparent.children.insert(grandparent.children.index(parent) + 1, self)
-
-    def move_deeper(self):
-        parent = self.parent
-        if parent is None:
-            return
-        siblings = parent.children
-
-        sibling_index = siblings.index(self)
-        if sibling_index == 0:
-            return
-
-        prev_sibling = siblings[sibling_index - 1]
-
-        siblings.remove(self)
-
-        self.depth += 1
-        self.update_child_depth()
-        self.parent = prev_sibling
-        prev_sibling.children.append(self)
-
-    def show(self):
-        indentation = "\t" * self.depth
-        print(f"{indentation}{self.get_text()}")
-        for c in self.children:
-            c.show()
-
-    def get_node_list(self, only_visible=False):
-        l = [self]
-        if (not only_visible) or (only_visible and not self.is_collapsed):
-            for c in self.children:
-                l.extend(c.get_node_list(only_visible=only_visible))
-        return l
-
-    def start_edit_mode(self):
-        self.edit_mode = True
-
-    def stop_edit_mode(self):
-        self.edit_mode = False
-
-    def encrypt(self, force=False):
-        already_encrypted = encryption_manager.is_encrypted(self.text)
-
-        if already_encrypted or "#ENCRYPT" in self.text or force:
-            if not already_encrypted:
-                self.text = encryption_manager.encrypt(self.text)
-            for c in self.children:
-                c.encrypt(force=True)
-        else:
-            for c in self.children:
-                c.encrypt()
-
-    def decrypt(self):
-        already_decrypted = not encryption_manager.is_encrypted(self.text)
-        if not already_decrypted:
-            self.text = encryption_manager.decrypt(self.text)
-        for c in self.children:
-            c.decrypt()
+EDIT_MODE_ESC = False
 
 
 class NoteTree:
     def __init__(self, filename, stdscr, palette):
         self.filename = filename
-        self.state_filename = f"{self.filename}_state.json"
+
+        self.state_filename = determine_state_filename(filename)
 
         self.stdscr = stdscr
 
         self.palette = palette
 
         self.root = Node(parent=None, text=filename)
+
         with open(self.filename, "r") as f:
             lines = f.read().splitlines()
 
@@ -454,6 +71,8 @@ class NoteTree:
 
         node_list = self.index_nodes()
 
+        self.bookmarks: dict[int, Node] = {}
+
         creation_time_map = {}  # map from first 30 chars to creation time
         context_node = None
         if os.path.exists(self.state_filename):
@@ -463,17 +82,16 @@ class NoteTree:
                 for index, suffix, properties in state:
                     matching_node = None
                     for prop in properties:
-                        if isinstance(prop, str) and re.match(
-                            r"\d{4}-\d{2}-\d{2}", prop
-                        ):
+                        if isinstance(prop, str) and re.match(r"\d{4}-\d{2}-\d{2}", prop):
                             creation_time_map[suffix] = datetime.strptime(
                                 prop, "%Y-%m-%d"
                             )
                             continue
 
+                        # TODO: improve the matching process?
                         if not matching_node:
                             for i in range(
-                                max(index - 5, 0), min(index + 5, len(node_list))
+                                max(index - 15, 0), min(index + 15, len(node_list))
                             ):
                                 node = node_list[i]
                                 if node.text.endswith(suffix):
@@ -485,7 +103,7 @@ class NoteTree:
                             elif prop == "context":
                                 context_node = matching_node
                             elif isinstance(prop, list) and prop[0] == "bookmark":
-                                matching_node.bookmark_timestamp = prop[1]
+                                self.bookmarks[prop[1]] = matching_node
 
         for n in node_list:
             n.creation_time = creation_time_map.get(n.text[-30:], datetime.now())
@@ -497,6 +115,8 @@ class NoteTree:
         self.journal = None
 
         self.key = None
+
+        self.show_bookmark_panel = False
 
         self.cut_nodes = []
 
@@ -538,27 +158,28 @@ class NoteTree:
                 if node == self.context_node:
                     properties.append("context")
 
-                if node.bookmark_timestamp:
-                    properties.append(("bookmark", node.bookmark_timestamp))
+                if node in self.bookmarks.values():
+                    for k, _node in self.bookmarks.items():
+                        if node == _node:
+                            properties.append(("bookmark", k))
+                            break
 
                 properties.append(node.creation_time.strftime("%Y-%m-%d"))
 
                 states.append((i, node.text[-30:], properties))
 
-        with open(f"{self.filename}_state.json", "w") as f:
+        with open(self.state_filename, "w") as f:
             json.dump(states, f, indent=4, default=str)
 
         self.has_unsaved_operations = False
-
-    def toggle_bookmark(self):
-        focus_node = self.visible_node_list[self.focus_index]
-        focus_node.toggle_bookmark()
-        self.has_unsaved_operations = True
 
     def toggle_done(self):
         focus_node = self.visible_node_list[self.focus_index]
         focus_node.toggle_done()
         self.has_unsaved_operations = True
+
+    def toggle_bookmark_panel(self):
+        self.show_bookmark_panel = not self.show_bookmark_panel
 
     def decrypt(self):
         encryption_manager.ensure_key()
@@ -615,11 +236,11 @@ class NoteTree:
 
         return matching_nodes
 
-    def find_bookmarks(self):
-        node_list = self.get_node_list()
-        bookmarks = [n for n in node_list if n.is_bookmarked()]
-        bookmarks = sorted(bookmarks, key=lambda n: -n.bookmark_timestamp)
-        return bookmarks
+    # def find_bookmarks(self):
+    #     node_list = self.get_node_list()
+    #     bookmarks = [n for n in node_list if n.is_bookmarked()]
+    #     bookmarks = sorted(bookmarks, key=lambda n: -n.bookmark_timestamp)
+    #     return bookmarks
 
     def ensure_journal_existence(self):
         if not "Journal" in [c.text for c in self.root.children]:
@@ -698,6 +319,19 @@ class NoteTree:
             else:
                 self.focus_index = self.visible_node_list.index(focus_node.parent)
 
+    def move_line(self, direction):
+        focus_node = self.visible_node_list[self.focus_index]
+        index = focus_node.parent.children.index(focus_node)
+        if direction == "up" and index > 0:
+            n = focus_node.parent.children.pop(index)
+            focus_node.parent.children.insert(index - 1, n)
+        elif direction == "down" and index < len(focus_node.parent.children) - 1:
+            n = focus_node.parent.children.pop(index)
+            focus_node.parent.children.insert(index + 1, n)
+
+        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.focus_index = self.visible_node_list.index(focus_node)
+
     def toggle_collapse(self):
         focus_node = self.visible_node_list[self.focus_index]
         if focus_node.children:
@@ -708,9 +342,7 @@ class NoteTree:
     def contextual_add_new_note(self):
         focus_node = self.visible_node_list[self.focus_index]
         is_context = focus_node == self.context_node
-        if (
-            focus_node.children and not focus_node.is_collapsed
-        ) or not focus_node.parent:
+        if (focus_node.children and not focus_node.is_collapsed) or not focus_node.parent:
             new_node = focus_node.add_child("", top=True)
         else:
             new_node = focus_node.add_directly_below(is_context=is_context)
@@ -722,22 +354,26 @@ class NoteTree:
             self.visible_node_list = self.context_node.get_node_list(only_visible=True)
             self.has_unsaved_operations = True
 
-    def deindent(self):
-        focus_node = self.visible_node_list[self.focus_index]
+    def deindent(self, count=1):
+        for _ in range(count):
+            focus_node = self.visible_node_list[self.focus_index]
 
-        # we can only deindent if the focus node is not a direct child of the context node, otherwise,
-        #   deindenting will make it move outside of the current context window
-        if focus_node.parent != self.context_node:
-            focus_node.move_shallower()
+            # we can only deindent if the focus node is not a direct child of the context node, otherwise,
+            #   deindenting will make it move outside of the current context window
+            if focus_node.parent != self.context_node:
+                focus_node.move_shallower()
+                self.index_nodes()
+                self.visible_node_list = self.context_node.get_node_list(
+                    only_visible=True
+                )
+                self.has_unsaved_operations = True
+
+    def indent(self, count=1):
+        for _ in range(count):
+            focus_node = self.visible_node_list[self.focus_index]
+            focus_node.move_deeper()
             self.index_nodes()
             self.visible_node_list = self.context_node.get_node_list(only_visible=True)
-            self.has_unsaved_operations = True
-
-    def indent(self):
-        focus_node = self.visible_node_list[self.focus_index]
-        focus_node.move_deeper()
-        self.index_nodes()
-        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
         self.has_unsaved_operations = True
 
     def delete_focus_node(self):
@@ -798,6 +434,46 @@ class NoteTree:
             matching_nodes.append(focus_node)
 
         return matching_nodes
+
+    def set_bookmark(self, index):
+        self.bookmarks[index] = self.visible_node_list[
+            self.focus_index
+        ]  # self.context_node
+        self.has_unsaved_operations = True
+
+    def toggle_bookmark(self):
+        node = self.visible_node_list[self.focus_index]
+        if node in self.bookmarks.values():
+            index = [k for k, n in self.bookmarks.items() if n == node][0]
+            del self.bookmarks[index]
+            self.has_unsaved_operations = True
+        else:
+            # find the find index that isn't user
+            new_index = None
+            for index in range(0, 10):
+                if not index in self.bookmarks:
+                    new_index = index
+                    break
+            if new_index is None:
+                return
+            self.bookmarks[new_index] = node
+            self.has_unsaved_operations = True
+
+        # TODO: handle the case of removing bookmark status (can also happen when a node is removed)
+        # make sure the number of bookmarks set is below the limit
+
+    def jump_to_bookmark(self, index):
+        if index in self.bookmarks:
+            # self.context_node = self.bookmarks[index]
+            # self.context_node.is_collapsed = False
+            # self.visible_node_list = self.context_node.get_node_list()
+            # self.focus_index = 0
+
+            focus_node = self.bookmarks[index]
+
+            self.update_context(focus_node, expand=True)
+
+            self.focus_index = self.visible_node_list.index(focus_node)
 
     def draw_status_bar(self, match_index=None, total_matches=None, refresh=False):
         first_node = self.visible_node_list[0]
@@ -861,7 +537,87 @@ class NoteTree:
                 self.palette.status_section | curses.A_BOLD,
             )
 
+    def draw_bookmark_panel(self):
+        start_line = 1  # curses.LINES//3
+        nb_lines = (
+            curses.LINES - start_line
+        )  # 0 if not self.bookmarks else 1+max(self.bookmarks)
+        panel_width = curses.COLS // 3
+
+        start_col = curses.COLS - panel_width
+
+        # indices = list(range(nb_lines))
+        # if indices:
+        #     indices = indices[1:] + [indices[0]]
+
+        formatting = curses.A_BOLD  # self.palette.top_bar | curses.A_BOLD
+        self.stdscr.addstr(
+            start_line, start_col, "│ Bookmarks".ljust(panel_width), formatting
+        )
+
+        nb_bookmarks = 10
+        cur_y = None
+        for index in range(nb_bookmarks):
+            y_offset = index  # (index - 1) % 10
+
+            node = self.bookmarks.get(index)
+            text = node.text if node else ""
+            y = y_offset + start_line + 1
+            x = 0 + start_col
+
+            text = f"│ {index}. {text}"
+            text = text[:panel_width]
+            text = text.ljust(panel_width)
+
+            # formatting = self.palette.top_bar # | curses.A_BOLD  # status_section
+
+            self.stdscr.addstr(y, x, text)  # , formatting)
+
+            cur_y = y
+
+        has_bookmark_zero = 0 in self.bookmarks
+        # draw separator
+
+        cur_y += 1
+        text = ("└" if not has_bookmark_zero else "│") + "─" * (panel_width - 1)
+        formatting = curses.A_BOLD  # status_section
+        self.stdscr.addstr(cur_y, start_col, text, formatting)
+
+        # if we have a bookmark for slot 0, add that to the panel
+        if 0 in self.bookmarks:
+            y = cur_y + 1
+            x = start_col
+
+            parent_node = self.bookmarks[0]
+
+            text = "│ " + parent_node.text
+            text = text[:panel_width]
+            text = text.ljust(panel_width)
+
+            formatting = curses.A_BOLD  # status_section
+            self.stdscr.addstr(y, x, text, formatting)
+
+            for node in parent_node.children:
+                if node.is_done(consider_parent=False):
+                    continue
+                text = "│ " + node.get_text()
+                if node.children:
+                    text = text + " [•••]"
+                text = text[:panel_width]
+                text = text.ljust(panel_width)
+                y += 1
+                # formatting = self.palette.top_bar
+                self.stdscr.addstr(y, x, text)  # , formatting)
+
+            # draw separator
+            y += 1
+            text = "└" + "─" * (panel_width - 1)
+            formatting = curses.A_BOLD  # status_section
+            self.stdscr.addstr(y, x, text, formatting)
+
     def render(self, command_mode=False, match_index=None, total_matches=None):
+        global EDIT_MODE_ESC
+
         # in the event that there have been collapses or deletions, make sure the focus index is still valid
         focus_node = self.visible_node_list[self.focus_index]
 
@@ -877,13 +633,12 @@ class NoteTree:
             box = Textbox(editwin, insert_mode=True)
 
             # Let the user edit until Ctrl-G is struck.
-            box.edit(self.command_edit_validator)
+            box.edit(command_edit_validator)
 
             # Get resulting contents
             message = box.gather()
 
             query_mode = message.startswith("?")
-            bookmark_mode = message.strip() == "b"
             jump_to_sources = (
                 message.strip() == "<"
             )  # given hashtags, go to slug locations
@@ -891,7 +646,13 @@ class NoteTree:
                 message.strip() == ">"
             )  # given slug, find hashtag references
 
-            if query_mode or bookmark_mode or jump_to_citations or jump_to_sources:
+            # if message.strip() in "0123456789" and len(message.strip()) == 1:
+            #     bookmark_key = int(message.strip())
+            # else:
+            #     bookmark_key = None
+
+            if query_mode or jump_to_citations or jump_to_sources:
+                matching_nodes = []
                 if query_mode:
                     query = message[1:].strip()
                     matching_nodes = self.find_matches(query=query)
@@ -899,8 +660,6 @@ class NoteTree:
                     matching_nodes = self.find_hashtag_sources()
                 elif jump_to_citations:
                     matching_nodes = self.find_hashtag_citations()
-                else:
-                    matching_nodes = self.find_bookmarks()
 
                 if not matching_nodes:
                     return self.render(command_mode=False)
@@ -942,7 +701,22 @@ class NoteTree:
                 self.visible_node_list = self.context_node.get_node_list()
                 self.focus_index = self.visible_node_list.index(new_node)
                 return self.render(command_mode=False)
+            elif message.strip() == "decrypt":
+                focus_node.decrypt()
+                return self.render(command_mode=False)
+            elif message.strip() == "save":
+                self.save()
+                return self.render(command_mode=False)
+            elif message.strip() == "random":
+                self.jump_to_random()
+                return self.render(command_mode=False)
+            elif message.strip() == "run":
+                focus_node.run_command()
+                return self.render(command_mode=False)
+            # elif isinstance(bookmark_key, int):
+            #     self.set_bookmark(bookmark_key)
 
+            #     return self.render(command_mode=False)
             else:
                 return self.render(command_mode=False)
         else:
@@ -981,8 +755,6 @@ class NoteTree:
                     age_color = self.palette.age_3
                 else:
                     age_color = self.palette.age_4
-
-                bookmarked_node = node.find_bookmarked()
 
                 is_last_child = node.parent.children[-1] == node
 
@@ -1085,10 +857,7 @@ class NoteTree:
                     try:
                         formatting = curses.A_NORMAL
                         coloring = None
-                        if bookmarked_node == node or (
-                            bookmarked_node
-                            and bookmarked_node not in self.visible_node_list
-                        ):
+                        if node in self.bookmarks.values():
                             coloring = self.palette.bookmark
                         if coloring is not None:
                             formatting = formatting | coloring
@@ -1132,9 +901,7 @@ class NoteTree:
                     if next_depth < root_depth + 2:
                         text = "▌" + " " * (curses.COLS - 1)
 
-                        self.stdscr.addstr(
-                            line_num, 0, text, curses.A_NORMAL | age_color
-                        )
+                        self.stdscr.addstr(line_num, 0, text, curses.A_NORMAL | age_color)
                         line_num += 1
                         if line_num >= curses.LINES - 1:
                             break
@@ -1143,6 +910,9 @@ class NoteTree:
                 text = " " * (curses.COLS - 1)
                 self.stdscr.addstr(line_num, 0, text)
                 line_num += 1
+
+            if self.show_bookmark_panel:
+                self.draw_bookmark_panel()
 
             self.stdscr.refresh()
 
@@ -1153,15 +923,30 @@ class NoteTree:
                 box = Textbox(editwin, insert_mode=True)
 
                 # Let the user edit until Ctrl-G or Enter is struck.
-                box.edit(self.edit_validator)
+                box.edit(edit_validator)
+                if EDIT_MODE_ESC:
+                    EDIT_MODE_ESC = False  # reset the flag
+                    edit_node.stop_edit_mode()
+                    return self.render()
 
                 # Get resulting contents
                 message = box.gather()
                 message = message.replace("\n", "").strip()
-                indent = message.startswith(">")
-                deindent = message.startswith("<")
-                message = message.lstrip(">")
-                message = message.lstrip("<")
+                # print("=====", message[-1], "=======")
+
+                indent_count = 0
+                while message.startswith(">"):
+                    indent_count += 1
+                    message = message[1:]
+                deindent_count = 0
+                while message.startswith("<"):
+                    deindent_count += 1
+                    message = message[1:]
+                # indent_count = message.startswith(">")
+                # deindent = message.startswith("<")
+                # message = message.lstrip(">")
+                # message = message.lstrip("<")
+                message = message.strip()
 
                 message = re.sub(r"{YMD}", datetime.now().strftime("%Y-%m-%d"), message)
                 message = re.sub(
@@ -1174,197 +959,37 @@ class NoteTree:
                 if edit_node.text:
                     self.has_unsaved_operations = True
 
-                    if indent:
-                        self.indent()
-                    elif deindent:
-                        self.deindent()
+                    if indent_count:
+                        self.indent(count=indent_count)
+                    elif deindent_count:
+                        self.deindent(count=deindent_count)
                 else:
                     self.delete_focus_node()
 
                 return self.render()
 
+        self.stdscr.move(curses.LINES - 1, curses.COLS - 1)
+
         return
 
-    @staticmethod
-    def command_edit_validator(ch):
-        # make it so that when the user presses enter, it's the same as ctrl-G (finish editing)
-        if ch in [7, 10]:
-            return 7
-        return ch
 
-    @staticmethod
-    def edit_validator(ch):
-        if ch == 9:  # tab
-            return ">"
-        if ch == 353:  # shift-tab
-            return "<"
-        # print(ch)
-        if ch in [7, 10]:
-            return 7
-
-        return ch
+def command_edit_validator(ch):
+    # make it so that when the user presses enter, it's the same as ctrl-G (finish editing)
+    if ch in [7, 10]:
+        return 7
+    return ch
 
 
-class Palette:
-    i = 50  # do not start at 0, because on some terminals, it messes up colours
+def edit_validator(ch):
+    global EDIT_MODE_ESC
+    if ch == 9:  # tab
+        return ">"
+    if ch == 353:  # shift-tab
+        return "<"
+    # print(ch)
+    if ch in [7, 10, 27]:  # 27 == esc
+        if ch == 27:
+            EDIT_MODE_ESC = True
+        return 7
 
-    def __init__(self, stdscr, colour_scheme):
-        self.background = self.create_color(colour_scheme["background"])
-        self.light_background = self.create_color(colour_scheme["top_bar_background"])
-
-        self.default_text = self.create_color(colour_scheme["default_text"])
-        self.highlight = self.create_color(colour_scheme["primary_highlight"])
-        self.highlight_2 = self.create_color(colour_scheme["secondary_highlight"])
-
-        # set the default background and foreground
-        stdscr.bkgd(" ", self.create_pair(self.default_text, self.background))
-
-        self.top_bar = self.create_pair(self.default_text, self.light_background)
-
-        self.bookmark = self.create_pair(self.highlight_2, self.background)
-
-        self.age_0_colour = self.create_color(colour_scheme["age_0"])
-        self.age_1_colour = self.create_color(colour_scheme["age_1"])
-        self.age_2_colour = self.create_color(colour_scheme["age_2"])
-        self.age_3_colour = self.create_color(colour_scheme["age_3"])
-        self.age_4_colour = self.create_color(colour_scheme["age_4"])
-
-        self.age_0 = self.create_pair(self.age_0_colour, self.background)
-        self.age_1 = self.create_pair(self.age_1_colour, self.background)
-        self.age_2 = self.create_pair(self.age_2_colour, self.background)
-        self.age_3 = self.create_pair(self.age_3_colour, self.background)
-        self.age_4 = self.create_pair(self.age_4_colour, self.background)
-
-        self.hashtag = self.create_pair(self.highlight, self.background)
-        self.focus_arrow = self.bookmark
-        self.nonfocus_arrow = self.age_3
-        self.status_section = self.create_pair(self.highlight, self.light_background)
-        self.collapse_indicator = self.create_pair(self.highlight_2, self.background)
-
-        question_colour = self.highlight_2
-        self.question = self.create_pair(question_colour, self.background)
-
-    def create_color(self, color):
-        if isinstance(color, str) and color[0] == "#":
-            color = color[1:]
-            r, g, b = tuple(int(color[i : i + 2], 16) for i in (0, 2, 4))
-        else:
-            r, g, b = color
-        self.i += 1
-        curses.init_color(
-            self.i, int(1000 * r / 256), int(1000 * g / 256), int(1000 * b / 256)
-        )
-        return self.i
-
-    def create_pair(self, foreground, background):
-        self.i += 1
-        curses.init_pair(self.i, foreground, background)
-        return curses.color_pair(self.i)
-
-
-def trigram_similarity(w_a, w_b, coverage_weight=0.5):
-    if not w_b:
-        return 0
-    # how well does w_a cover w_b
-    w_a = w_a.lower()
-    w_b = w_b.lower()
-
-    # calculate intersection size of word bigrams
-    set_a = set(zip(w_a[0:], w_a[1:], w_a[2:]))
-    set_b = set(zip(w_b[0:], w_b[1:], w_b[2:]))
-
-    if not set_a or not set_b:
-        return 0
-
-    n_intersect = len(set_a.intersection(set_b))
-
-    coverage = n_intersect / len(set_b)
-    similarity = n_intersect / len(set_a.union(set_b))
-
-    return coverage * coverage_weight + similarity * (1 - coverage_weight)
-
-
-def main(stdscr):
-    with open("colour_schemes.json", "r") as f:
-        colour_schemes = json.load(f)
-
-    with open("config.json", "r") as f:
-        config = json.load(f)
-
-    colour_scheme = colour_schemes[config.get("colour_scheme", "brown_and_blue")]
-    assert colour_scheme
-
-    palette = Palette(stdscr, colour_scheme)
-
-    T = NoteTree(notes_filename, stdscr, palette)
-
-    encryption_manager.set_tree(T)
-    encryption_manager.set_stdscr(stdscr)
-    encryption_manager.run()
-
-    T.render()
-
-    # up, down, left right, space, a, s, d, r, enter, tab, backspace, b, x, del, ctrl-x, ctrl-v, esc, c, c-?, c-b, c-<, c->
-
-    while True:
-        c = stdscr.getch()
-        encryption_manager.keep_alive()
-
-        focus_node = T.visible_node_list[T.focus_index]
-
-        command_mode = False
-        if c == curses.KEY_UP:
-            T.move_up()
-        elif c == curses.KEY_DOWN:
-            T.move_down()
-        elif c == curses.KEY_RIGHT:
-            T.move_right()
-        elif c == curses.KEY_LEFT:
-            T.move_left()
-        elif c == ord(" "):
-            T.toggle_collapse()
-        elif c == ord("a") or c == curses.KEY_BACKSPACE:
-            focus_node.start_edit_mode()
-        elif c == ord("s"):
-            T.save()
-        elif c == ord("d"):
-            focus_node.decrypt()
-        elif c == ord("r"):
-            T.jump_to_random()
-        elif c == ord("\n"):
-            T.contextual_add_new_note()
-        elif c == 353:  # shift-tab #curses.KEY_BACKSPACE:
-            T.deindent()
-        elif c == ord("\t"):
-            T.indent()
-        elif c == ord("c"):
-            # start using commandline
-            command_mode = True
-        elif c == ord("b"):
-            # bookmark
-            T.toggle_bookmark()
-        elif c == ord("x"):
-            # toggle done state
-            T.toggle_done()
-        elif c == 330:  # delete
-            T.delete_focus_node()
-        elif c == 24:  # Ctrl-X: cut
-            T.cut_focus_node()
-        elif c == 22:  # Ctrl-V: paste
-            T.paste()
-        elif c == 0x1B:  # escape
-            T.cut_nodes = []
-
-        T.render(command_mode)
-
-
-if __name__ == "__main__":
-    encryption_manager = EncryptionManager()
-
-    # Must happen BEFORE calling the wrapper, else escape key has a 1 second delay after pressing:
-    os.environ.setdefault("ESCDELAY", "100")  # in mS; default: 1000
-
-    try:
-        curses.wrapper(main)
-    except KeyboardInterrupt:
-        exit()
+    return ch

@@ -2,39 +2,47 @@
 	- up and down
 	- left (move up in the tree), right (move deeper into the tree -- useful if you want to focus on something)
 	- jumping to a random note: r
-	- to exit the forest, type Ctrl-C
+	- to exit the forest, type Ctrl-C. Make sure you have saved any changes first!
 - Creating new notes
 	- press Enter below where you want the note
-	- while typing the note text, you can type Tab or Shift+Tab to indent or de-indent it
+	- while typing the note text, you can type Tab or Shift+Tab at the line start to indent or de-indent it
 - Look! This branch is collapsed!
 	- It can have so many things inside
 - #Editing notes
-	- press a or backspace to edit a note. Press Enter when you're done editing
+	- press a or backspace to edit a note. Press Enter when you're done editing. Or Esc to cancel your changes
 	- marking as complete: x (this will also dim the children of the node. Press x again to toggle status) #DONE
 	- indent and de-indent: tab and shift+tab
-	- bookmarking: b (also togglable)
+	- to bookmark a note, type b
+		- to see existing bookmarks, type `. Hitting the same key will hide this window
+		- a maximum of 10 bookmarks are supported
+		- to jump to a bookmark, hit the number key associated with the bookmark (found with `)
 	- adding #hashtags
 		- When the hashtag occurs at the start of the note (like the parent note of this branch), the FIRST 3 WORDS are used as the hashtag
 		- When the hashtag occurs anywhere else, use dashes (-) in place of spaces. These are called "linking" hashtags
 	- to delete a note, press delete (currently no undo feature)
+	- to move a note up or down among its siblings, use u and d
 - Collapsing (press space on any note with children)
-- Command mode (enter command mode with c)
-	- searching for a note: c+? <query>
-	- looping between bookmarks: c+b
-	- finding hashtag matches: c+< (to find the source) or c+> (to find the linking notes)
+- Command mode (enter command mode with :)
+	- searching for a note: :? <query>
+	- finding hashtag matches: :< (to find the source) or :> (to find the linking notes)
 		- The < command will let you go to the "source" note. A hashtag source is a note that starts with a hashtag. For example, the source for #editing-notes is the "Editing notes" note
 		- The > command will let you cycle through the "linking" note.
 		- When cycling through matches, press Enter to choose where to stop
-- Moving notes
+- Copying and pasting notes
 	- press Ctrl+X on as many notes as you like (this will also add the note text to your clipboard)
 	- move to the location you want to put the notes, and press Ctrl-V
 	- if you want to cancel your copy action, press Esc
-	- you can indent or de-indent a note with Tab or Shift+Tab
-- Saving changes (hit the s key)
+- Saving changes (hit the s key, or :save)
 - Using the journal
-	- to add a journal entry (a journal branch will automatically be created), enter command mode with c, and then type j+ <entry>
+	- to add a journal entry (a journal branch will automatically be created), use :j+ <entry>
 	- journal entries are automatically sorted into branches for the year and month
 - What's up with the blue strip on the left?
 	- This strip reflects the age of a note. New ones are bright blue, and as the get older, they will slowly fade
 - Encrypting and decrypting
-	- ... will be explained later
+	- to mark a branch as to-be-encrypted, add "# ENCRYPT" (without the space) in the root note of the branch
+		- upon saving, you may be prompted for an encryption key
+	- to decrypt a branch, use :decrypt. You will be prompted for a key if you haven't done so recently
+	- to generate your own encryption key, use `from cryptography.fernet import Fernet; Fernet.generate_key()`
+		- make sure you don't lose this
+- Colour Scheme
+	- To change the colour scheme, change the value in config.json to the name of an entry in colour_schemes.json

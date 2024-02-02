@@ -18,6 +18,9 @@ class Palette:
         self.top_bar = self.create_pair(self.default_text, self.light_background)
 
         self.bookmark = self.create_pair(self.highlight_2, self.background)
+        self.yellow = self.create_pair(
+            self.create_color((255, 255, 0)), self.background
+        )
 
         self.age_0_colour = self.create_color(colour_scheme["age_0"])
         self.age_1_colour = self.create_color(colour_scheme["age_1"])

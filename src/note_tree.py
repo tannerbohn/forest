@@ -11,6 +11,7 @@ import pyclip
 
 from encryption_manager import encryption_manager
 from node import Node
+from subtrees import subtrees
 from utils import MONTH_ORDER, determine_state_filename, trigram_similarity
 
 EDIT_MODE_ESC = False
@@ -72,6 +73,7 @@ class NoteTree:
         node_list = self.index_nodes()
 
         self.bookmarks: dict[int, Node] = {}
+        self.bookmark_last_use_times: dict[int, datetime] = {}
 
         creation_time_map = {}  # map from first 30 chars to creation time
         context_node = None
@@ -79,13 +81,13 @@ class NoteTree:
             with open(self.state_filename, "r") as f:
                 state = json.load(f)
 
-                for index, suffix, properties in state:
+                for index, key, properties in state:
                     matching_node = None
                     for prop in properties:
-                        if isinstance(prop, str) and re.match(r"\d{4}-\d{2}-\d{2}", prop):
-                            creation_time_map[suffix] = datetime.strptime(
-                                prop, "%Y-%m-%d"
-                            )
+                        if isinstance(prop, str) and re.match(
+                            r"\d{4}-\d{2}-\d{2}", prop
+                        ):
+                            creation_time_map[key] = datetime.strptime(prop, "%Y-%m-%d")
                             continue
 
                         # TODO: improve the matching process?
@@ -94,7 +96,10 @@ class NoteTree:
                                 max(index - 15, 0), min(index + 15, len(node_list))
                             ):
                                 node = node_list[i]
-                                if node.text.endswith(suffix):
+                                if (
+                                    node.get_key() == key
+                                ):  # TODO: can store a mapping from i -> hash if this needs to be faster
+                                    # if node.text[-30:] == key:
                                     matching_node = node
                                     break
                         if matching_node:
@@ -104,9 +109,13 @@ class NoteTree:
                                 context_node = matching_node
                             elif isinstance(prop, list) and prop[0] == "bookmark":
                                 self.bookmarks[prop[1]] = matching_node
+                                self.bookmark_last_use_times[
+                                    prop[1]
+                                ] = datetime.fromtimestamp(prop[2])
 
         for n in node_list:
-            n.creation_time = creation_time_map.get(n.text[-30:], datetime.now())
+            n.creation_time = creation_time_map.get(n.get_key(), datetime.now())
+            # n.creation_time = creation_time_map.get(n.text[-30:], datetime.now())
 
         self.context_node = context_node or self.root
         self.visible_node_list = self.context_node.get_node_list(only_visible=True)
@@ -122,17 +131,7 @@ class NoteTree:
 
         self.has_unsaved_operations = False
 
-    def index_nodes(self):
-        node_list = self.get_node_list(only_visible=False)
-        for i, node in enumerate(node_list):
-            node.index = i
-        return node_list
-
-    def get_node_list(self, only_visible=False):
-        return self.root.get_node_list(only_visible=only_visible)
-
-    def show(self):
-        self.root.show()
+        self.plugins = []
 
     def save(self):
         # apply encryption where needed
@@ -161,17 +160,41 @@ class NoteTree:
                 if node in self.bookmarks.values():
                     for k, _node in self.bookmarks.items():
                         if node == _node:
-                            properties.append(("bookmark", k))
+                            last_use_time = self.bookmark_last_use_times[k].timestamp()
+                            properties.append(("bookmark", k, last_use_time))
                             break
 
                 properties.append(node.creation_time.strftime("%Y-%m-%d"))
 
-                states.append((i, node.text[-30:], properties))
+                # states.append((i, node.text[-30:], properties))
+                states.append((i, node.get_key(), properties))
 
         with open(self.state_filename, "w") as f:
             json.dump(states, f, indent=4, default=str)
 
         self.has_unsaved_operations = False
+
+    def index_nodes(self):
+        node_list = self.get_node_list(only_visible=False)
+        for i, node in enumerate(node_list):
+            node.index = i
+        return node_list
+
+    def get_node_list(self, only_visible=False):
+        return self.root.get_node_list(only_visible=only_visible)
+
+    def search(self, text):
+        to_search = self.root.children
+        while to_search:
+            for node in list(to_search):
+                if node.text == text:
+                    return node
+                _ = to_search.pop(0)
+                to_search.extend(node.children)
+        return None
+
+    def show(self):
+        self.root.show()
 
     def toggle_done(self):
         focus_node = self.visible_node_list[self.focus_index]
@@ -202,14 +225,20 @@ class NoteTree:
 
     def jump_to_random(self):
         # set focus_index and context_node
-        node_list = self.root.get_node_list(only_visible=False)
-        node_list = node_list[1:]  # remove the root node which has no parent
+        node_list = self.context_node.get_node_list(only_visible=False)
+        node_list = node_list[1:]  # remove the root node
         if not node_list:
             return
 
         focus_node = random.choice(node_list)
 
-        self.update_context(focus_node.parent, expand=True)
+        parent = focus_node.parent
+        while parent != self.context_node:
+            parent.is_collapsed = False
+            parent = parent.parent
+
+        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        # self.update_context(focus_node.parent, expand=True)
 
         self.focus_index = self.visible_node_list.index(focus_node)
 
@@ -236,12 +265,6 @@ class NoteTree:
 
         return matching_nodes
 
-    # def find_bookmarks(self):
-    #     node_list = self.get_node_list()
-    #     bookmarks = [n for n in node_list if n.is_bookmarked()]
-    #     bookmarks = sorted(bookmarks, key=lambda n: -n.bookmark_timestamp)
-    #     return bookmarks
-
     def ensure_journal_existence(self):
         if not "Journal" in [c.text for c in self.root.children]:
             node = self.root.add_child("Journal")
@@ -261,10 +284,11 @@ class NoteTree:
         #   a timestamp like [2023-05-21 9:30 AM]
         now = datetime.now()
 
-        first_word = entry.split()[0]
-        if re.match(r"\d{4}-\d{2}-\d{2}", first_word):
-            now = datetime.strptime(first_word, "%Y-%m-%d")
-            entry = " ".join(entry.split()[1:])
+        if entry.strip():
+            first_word = entry.split()[0]
+            if re.match(r"\d{4}-\d{2}-\d{2}", first_word):
+                now = datetime.strptime(first_word, "%Y-%m-%d")
+                entry = " ".join(entry.split()[1:])
 
         # make sure there's a branch in the journal for the current year
         year = str(now.year)
@@ -296,6 +320,9 @@ class NoteTree:
 
         return new_node
 
+    def ensure_path(self, text_list):
+        return self.root.ensure_path(text_list)
+
     def move_up(self):
         self.focus_index = (self.focus_index - 1) % len(self.visible_node_list)
 
@@ -325,9 +352,11 @@ class NoteTree:
         if direction == "up" and index > 0:
             n = focus_node.parent.children.pop(index)
             focus_node.parent.children.insert(index - 1, n)
+            self.has_unsaved_operations = True
         elif direction == "down" and index < len(focus_node.parent.children) - 1:
             n = focus_node.parent.children.pop(index)
             focus_node.parent.children.insert(index + 1, n)
+            self.has_unsaved_operations = True
 
         self.visible_node_list = self.context_node.get_node_list(only_visible=True)
         self.focus_index = self.visible_node_list.index(focus_node)
@@ -342,7 +371,9 @@ class NoteTree:
     def contextual_add_new_note(self):
         focus_node = self.visible_node_list[self.focus_index]
         is_context = focus_node == self.context_node
-        if (focus_node.children and not focus_node.is_collapsed) or not focus_node.parent:
+        if (
+            focus_node.children and not focus_node.is_collapsed
+        ) or not focus_node.parent:
             new_node = focus_node.add_child("", top=True)
         else:
             new_node = focus_node.add_directly_below(is_context=is_context)
@@ -395,7 +426,7 @@ class NoteTree:
         clipboard_contents = "\n".join(n.text for n in self.cut_nodes)
 
         # make the cut content accessible via clipboard (for external use)
-        pyclip.copy(clipboard_contents)
+        # pyclip.copy(clipboard_contents)
 
     def paste(self):
         if self.cut_nodes:
@@ -420,6 +451,9 @@ class NoteTree:
             matching_nodes.append(focus_node)
         return matching_nodes
 
+    def add_note_from_telegram(self, message):
+        return f"Adding: {message}"
+
     def find_hashtag_citations(self):
         focus_node = self.visible_node_list[self.focus_index]
 
@@ -435,32 +469,30 @@ class NoteTree:
 
         return matching_nodes
 
-    def set_bookmark(self, index):
-        self.bookmarks[index] = self.visible_node_list[
-            self.focus_index
-        ]  # self.context_node
-        self.has_unsaved_operations = True
-
     def toggle_bookmark(self):
         node = self.visible_node_list[self.focus_index]
         if node in self.bookmarks.values():
             index = [k for k, n in self.bookmarks.items() if n == node][0]
             del self.bookmarks[index]
+            del self.bookmark_last_use_times[index]
             self.has_unsaved_operations = True
         else:
-            # find the find index that isn't user
+            # find the first index that isn't user
             new_index = None
             for index in range(0, 10):
                 if not index in self.bookmarks:
                     new_index = index
                     break
             if new_index is None:
-                return
-            self.bookmarks[new_index] = node
-            self.has_unsaved_operations = True
+                # replace the bookmark that hasn't been used in the longest time
+                new_index = sorted(
+                    self.bookmark_last_use_times,
+                    key=lambda index: self.bookmark_last_use_times[index],
+                )[0]
 
-        # TODO: handle the case of removing bookmark status (can also happen when a node is removed)
-        # make sure the number of bookmarks set is below the limit
+            self.bookmarks[new_index] = node
+            self.bookmark_last_use_times[new_index] = datetime.now()
+            self.has_unsaved_operations = True
 
     def jump_to_bookmark(self, index):
         if index in self.bookmarks:
@@ -470,8 +502,12 @@ class NoteTree:
             # self.focus_index = 0
 
             focus_node = self.bookmarks[index]
+            self.bookmark_last_use_times[index] = datetime.now()
 
-            self.update_context(focus_node, expand=True)
+            if focus_node.parent:
+                self.update_context(focus_node.parent, expand=True)
+            else:
+                self.update_context(focus_node, expand=True)
 
             self.focus_index = self.visible_node_list.index(focus_node)
 
@@ -555,6 +591,15 @@ class NoteTree:
             start_line, start_col, "│ Bookmarks".ljust(panel_width), formatting
         )
 
+        # locate the oldest bookmark
+        if self.bookmark_last_use_times:
+            oldest_index = sorted(
+                self.bookmark_last_use_times,
+                key=lambda index: self.bookmark_last_use_times[index],
+            )[0]
+        else:
+            oldest_index = None
+
         nb_bookmarks = 10
         cur_y = None
         for index in range(nb_bookmarks):
@@ -569,9 +614,14 @@ class NoteTree:
             text = text[:panel_width]
             text = text.ljust(panel_width)
 
-            # formatting = self.palette.top_bar # | curses.A_BOLD  # status_section
+            if index == oldest_index:
+                formatting = curses.A_BOLD | curses.A_DIM
+            else:
+                formatting = (
+                    curses.A_BOLD
+                )  # self.palette.top_bar # | curses.A_BOLD  # status_section
 
-            self.stdscr.addstr(y, x, text)  # , formatting)
+            self.stdscr.addstr(y, x, text, formatting)
 
             cur_y = y
 
@@ -637,19 +687,11 @@ class NoteTree:
 
             # Get resulting contents
             message = box.gather()
+            message = message.strip()
 
             query_mode = message.startswith("?")
-            jump_to_sources = (
-                message.strip() == "<"
-            )  # given hashtags, go to slug locations
-            jump_to_citations = (
-                message.strip() == ">"
-            )  # given slug, find hashtag references
-
-            # if message.strip() in "0123456789" and len(message.strip()) == 1:
-            #     bookmark_key = int(message.strip())
-            # else:
-            #     bookmark_key = None
+            jump_to_sources = message == "<"  # given hashtags, go to slug locations
+            jump_to_citations = message == ">"  # given slug, find hashtag references
 
             if query_mode or jump_to_citations or jump_to_sources:
                 matching_nodes = []
@@ -701,22 +743,22 @@ class NoteTree:
                 self.visible_node_list = self.context_node.get_node_list()
                 self.focus_index = self.visible_node_list.index(new_node)
                 return self.render(command_mode=False)
-            elif message.strip() == "decrypt":
+            elif message == "decrypt":
                 focus_node.decrypt()
                 return self.render(command_mode=False)
-            elif message.strip() == "save":
+            elif message == "save":
                 self.save()
                 return self.render(command_mode=False)
-            elif message.strip() == "random":
+            elif message == "random":
                 self.jump_to_random()
                 return self.render(command_mode=False)
-            elif message.strip() == "run":
+            elif message == "run":
                 focus_node.run_command()
                 return self.render(command_mode=False)
-            # elif isinstance(bookmark_key, int):
-            #     self.set_bookmark(bookmark_key)
-
-            #     return self.render(command_mode=False)
+            elif message in subtrees:
+                # add_scamper_structure(focus_node)
+                add_subtree(focus_node, subtrees[message])
+                return self.refresh()
             else:
                 return self.render(command_mode=False)
         else:
@@ -777,7 +819,7 @@ class NoteTree:
                     # first draw the full text
                     try:
                         formatting = curses.A_NORMAL
-                        coloring = 0
+                        coloring = 0  # if not "#a" in node.text.split() else self.palette.bookmark
                         if is_done:
                             formatting = formatting | curses.A_DIM
 
@@ -856,12 +898,15 @@ class NoteTree:
                     # now draw the bookmark indicator strip
                     try:
                         formatting = curses.A_NORMAL
-                        coloring = None
+
                         if node in self.bookmarks.values():
-                            coloring = self.palette.bookmark
-                        if coloring is not None:
-                            formatting = formatting | coloring
+                            # coloring = self.palette.bookmark
+                            # if coloring is not None:
+                            #
                             self.stdscr.addstr(line_num, 1, "💠", formatting)
+                        # elif "#y" in node.text:
+                        #     formatting = formatting | self.palette.yellow
+                        #     self.stdscr.addstr(line_num, 1, "▌", formatting)
                     except:
                         raise Exception(f"[{curses.LINES}/{curses.COLS}]\n{chunk}")
 
@@ -901,7 +946,9 @@ class NoteTree:
                     if next_depth < root_depth + 2:
                         text = "▌" + " " * (curses.COLS - 1)
 
-                        self.stdscr.addstr(line_num, 0, text, curses.A_NORMAL | age_color)
+                        self.stdscr.addstr(
+                            line_num, 0, text, curses.A_NORMAL | age_color
+                        )
                         line_num += 1
                         if line_num >= curses.LINES - 1:
                             break
@@ -972,6 +1019,19 @@ class NoteTree:
 
         return
 
+    def refresh(self):
+        self.index_nodes()
+        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.has_unsaved_operations = True
+        self.render(command_mode=False)
+
+    def add_plugin(self, cls):
+        self.plugins.append(cls(self))
+
+    def run_plugins(self):
+        for p in self.plugins:
+            p.run()
+
 
 def command_edit_validator(ch):
     # make it so that when the user presses enter, it's the same as ctrl-G (finish editing)
@@ -993,3 +1053,29 @@ def edit_validator(ch):
         return 7
 
     return ch
+
+
+def add_subtree(node, tree):
+    for k, v in tree.items():
+        child = node.add_child(k)
+        if v:
+            add_subtree(child, v)
+
+
+# def add_scamper_structure(node):
+#     tree = {
+#         "SCAMPER": {
+#             "Substitute": None,
+#             "Combine": {
+#                 "With Blah": None,
+#                 "Or NAH": None,
+#             },
+#             "Adapt": None,
+#             "Magnify/Modify": None,
+#             "Put to other use": None,
+#             "Eliminate": None,
+#             "Rearrange/Reverse": None
+#         }
+#     }
+
+#     add_subtree(node, tree)

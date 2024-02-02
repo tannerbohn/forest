@@ -1,367 +1,360 @@
 [
     [
         1,
-        "Moving around",
+        "/intro.txt>Moving around",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         2,
-        "up and down",
+        "/intro.txt>ing around>up and down",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         3,
-        "ou want to focus on something)",
+        "/intro.txt>ing around>ou want to focus on something)",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         4,
-        "jumping to a random note: r",
+        "/intro.txt>ing around>current section of the tree: r",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         5,
-        " have saved any changes first!",
+        "/intro.txt>ing around> have saved any changes first!",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         6,
-        "Creating new notes",
+        "/intro.txt>Creating new notes",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         7,
-        " below where you want the note",
+        "/intro.txt> new notes> below where you want the note",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         8,
-        "tart to indent or de-indent it",
+        "/intro.txt> new notes>tart to indent or de-indent it",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         9,
-        "ook! This branch is collapsed!",
+        "/intro.txt>ook! This branch is collapsed!",
         [
             "collapsed",
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         10,
-        "can have so many things inside",
+        "/intro.txt>collapsed!>can have so many things inside",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         11,
-        "#Editing notes",
+        "/intro.txt>#Editing notes",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         12,
-        " Or Esc to cancel your changes",
+        "/intro.txt>ting notes> Or Esc to cancel your changes",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         13,
-        " again to toggle status) #DONE",
+        "/intro.txt>ting notes> again to toggle status) #DONE",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         14,
-        "d de-indent: tab and shift+tab",
+        "/intro.txt>ting notes>d de-indent: tab and shift+tab",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         15,
-        "to bookmark a note, type b",
+        "/intro.txt>ting notes>to bookmark a note, type b",
         [
-            "collapsed",
-            [
-                "bookmark",
-                0
-            ],
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         16,
-        "same key will hide this window",
+        "/intro.txt>ting notes>te, type b>same key will hide this window",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         17,
-        "u need to refer to frequently)",
+        "/intro.txt>ting notes>te, type b>his window>u need to refer to frequently)",
         [
-            "2024-01-15"
+            "2024-01-22"
         ]
     ],
     [
         18,
-        " of 10 bookmarks are supported",
+        "/intro.txt>ting notes>te, type b> of 10 bookmarks are supported",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         19,
-        "th the bookmark (found with `)",
+        "/intro.txt>ting notes>te, type b>th the bookmark (found with `)",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         20,
-        "adding #hashtags",
+        "/intro.txt>ting notes>adding #hashtags",
         [
-            "collapsed",
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         21,
-        " WORDS are used as the hashtag",
+        "/intro.txt>ting notes> #hashtags> WORDS are used as the hashtag",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         22,
-        " are called \"linking\" hashtags",
+        "/intro.txt>ting notes> #hashtags> are called \"linking\" hashtags",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         23,
-        "te (currently no undo feature)",
+        "/intro.txt>ting notes>te (currently no undo feature)",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         24,
-        "mong its siblings, use u and d",
+        "/intro.txt>ting notes>mong its siblings, use u and d",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         25,
-        "ace on any note with children)",
+        "/intro.txt>ace on any note with children)",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         26,
-        "de (enter command mode with :)",
+        "/intro.txt>de (enter command mode with :)",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         27,
-        "arching for a note: :? <query>",
+        "/intro.txt>de with :)>arching for a note: :? <query>",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         28,
-        ":> (to find the linking notes)",
+        "/intro.txt>de with :)>:> (to find the linking notes)",
         [
-            "collapsed",
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         29,
-        "es is the \"Editing notes\" note",
+        "/intro.txt>de with :)>ing notes)>es is the \"Editing notes\" note",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         30,
-        "le through the \"linking\" note.",
+        "/intro.txt>de with :)>ing notes)>le through the \"linking\" note.",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         31,
-        " Enter to choose where to stop",
+        "/intro.txt>de with :)>ing notes)> Enter to choose where to stop",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         32,
-        "Copying and pasting notes",
+        "/intro.txt>Copying and pasting notes",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         33,
-        "e note text to your clipboard)",
+        "/intro.txt>ting notes>e note text to your clipboard)",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         34,
-        "ut the notes, and press Ctrl-V",
+        "/intro.txt>ting notes>ut the notes, and press Ctrl-V",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         35,
-        "el your copy action, press Esc",
+        "/intro.txt>ting notes>el your copy action, press Esc",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         36,
-        "nges (hit the s key, or :save)",
+        "/intro.txt>nges (hit the s key, or :save)",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         37,
-        "Using the journal",
+        "/intro.txt>Using the journal",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         38,
-        "y be created), use :j+ <entry>",
+        "/intro.txt>he journal>y be created), use :j+ <entry>",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         39,
-        "ranches for the year and month",
+        "/intro.txt>he journal>ranches for the year and month",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         40,
-        "th the blue strip on the left?",
+        "/intro.txt>th the blue strip on the left?",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         41,
-        "t older, they will slowly fade",
+        "/intro.txt> the left?>t older, they will slowly fade",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         42,
-        "Encrypting and decrypting",
+        "/intro.txt>Encrypting and decrypting",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         43,
-        "in the root note of the branch",
+        "/intro.txt>decrypting>in the root note of the branch",
         [
-            "2023-07-19"
+            "2024-01-22"
         ]
     ],
     [
         44,
-        "prompted for an encryption key",
+        "/intro.txt>decrypting>the branch>prompted for an encryption key",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         45,
-        "f you haven't done so recently",
+        "/intro.txt>decrypting>f you haven't done so recently",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         46,
-        "Fernet; Fernet.generate_key()`",
+        "/intro.txt>decrypting>Fernet; Fernet.generate_key()`",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         47,
-        "make sure you don't lose this",
+        "/intro.txt>decrypting>ate_key()`>make sure you don't lose this",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         48,
-        "Colour Scheme",
+        "/intro.txt>Colour Scheme",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         49,
-        "n entry in colour_schemes.json",
+        "/intro.txt>our Scheme>n entry in colour_schemes.json",
         [
-            "2024-01-13"
+            "2024-01-22"
         ]
     ],
     [
         50,
-        "Executable notes",
+        "/intro.txt>Executable notes",
         [
-            "2024-01-15"
+            "2024-01-22"
         ]
     ],
     [
         51,
-        "ents in a subprocess with :run",
+        "/intro.txt>able notes>ents in a subprocess with :run",
         [
-            "2024-01-15"
+            "2024-01-22"
         ]
     ]
 ]

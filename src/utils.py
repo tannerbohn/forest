@@ -21,7 +21,9 @@ def determine_state_filename(filepath):
     filename = path_parts[-1]
     filename_without_ext = filename.rsplit(".", 1)[0]
 
-    return os.path.join(*path_parts[:-1], "states", f"{filename_without_ext}_state.json")
+    return os.path.join(
+        *path_parts[:-1], "states", f"{filename_without_ext}_state.json"
+    )
 
 
 def trigram_similarity(w_a, w_b, coverage_weight=0.5):

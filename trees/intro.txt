@@ -1,7 +1,7 @@
 - Moving around
 	- up and down
 	- left (move up in the tree), right (move deeper into the tree -- useful if you want to focus on something)
-	- jumping to a random note: r
+	- jumping to a random note anywhere in the current section of the tree: r
 	- to exit the forest, type Ctrl-C. Make sure you have saved any changes first!
 - Creating new notes
 	- press Enter below where you want the note

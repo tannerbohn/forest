@@ -11,7 +11,7 @@ A minimal tree-based note interface made with love.
 
 ## Step 2: Check out the intro
 
-`python3 forest.py trees/intro.txt`
+`python3 src/forest.py trees/intro.txt`
 
 
 ## Step 3: Create your own tree!

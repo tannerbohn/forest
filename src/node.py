@@ -18,6 +18,16 @@ class Node:
 
         self.index = 0
 
+    def ensure_path(self, text_list):
+        if not text_list:
+            return self
+
+        for node in self.children:
+            if node.text == text_list[0]:
+                return node.ensure_path(text_list[1:])
+
+        return self.add_child(text_list[0]).ensure_path(text_list[1:])
+
     def get_slug(self):
         """
         TODO: make this a property that only needs to be computed once? (and upon any change to the text)
@@ -28,6 +38,14 @@ class Node:
         words = self.text[1:].split()
         words = [w for w in words if not w[0] == "#"]
         return "-".join(words[:3]).lower()
+
+    def get_key(self):
+        """
+        The "key" for a node is a unique identifier used when saving/loading the state file. We need to be able to attach metadata to notes
+          even when multiple nearby notes might be identical
+        """
+        path = self.get_path(include_self=False)
+        return ">".join([p[-10:] for p in path] + [self.text[-30:]])
 
     def get_hashtags(self):
         if not "#" in self.text:

@@ -1,11 +1,13 @@
 # Author: Tanner Bohn
 
+import _thread
 import argparse
 import curses
 import json
 import os
 
 from encryption_manager import encryption_manager
+from modules.linksaver import LinkSaver
 from note_tree import NoteTree
 from palette import Palette
 
@@ -30,6 +32,7 @@ def main(stdscr):
     global T
 
     # curses.curs_set(False)
+    # curses.mousemask(curses.ALL_MOUSE_EVENTS | curses.REPORT_MOUSE_POSITION)
 
     with open("colour_schemes.json", "r") as f:
         colour_schemes = json.load(f)
@@ -46,12 +49,16 @@ def main(stdscr):
         palette=Palette(stdscr, colour_scheme),
     )
 
+    # T.add_plugin(LinkSaver)
+    T.run_plugins()
+
     encryption_manager.set_tree(T)
     encryption_manager.set_stdscr(stdscr)
     encryption_manager.run()
 
     T.render()
 
+    last_ch = None
     while True:
         c = stdscr.getch()
         encryption_manager.keep_alive()
@@ -109,8 +116,18 @@ def main(stdscr):
             T.move_line("up")
         elif c == ord("d"):
             T.move_line("down")
+        # elif c == curses.KEY_RESIZE and not last_ch == curses.KEY_RESIZE:
+        #     curses.resizeterm(*stdscr.getmaxyx())
+        #     stdscr.clear()
+        #     stdscr.refresh()
+        #     focus_node.text = f"RESIZE: {curses.COLS}, {curses.LINES}"
+        # elif c == curses.KEY_MOUSE:
+        #     _, x, y, _, button = curses.getmouse()
+        #     focus_node.text = f"{button}: {x}, {y}"
         # else:
         #     focus_node.text = str(c)
+
+        last_ch = c
 
         T.render(command_mode)
 

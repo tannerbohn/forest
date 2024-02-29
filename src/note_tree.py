@@ -614,14 +614,14 @@ class NoteTree:
             text = text[:panel_width]
             text = text.ljust(panel_width)
 
-            if index == oldest_index:
-                formatting = curses.A_BOLD | curses.A_DIM
-            else:
-                formatting = (
-                    curses.A_BOLD
-                )  # self.palette.top_bar # | curses.A_BOLD  # status_section
+            # if index == oldest_index:
+            #     formatting = curses.A_BOLD | curses.A_DIM
+            # else:
+            #     formatting = (
+            #         curses.A_BOLD
+            #     )  # self.palette.top_bar # | curses.A_BOLD  # status_section
 
-            self.stdscr.addstr(y, x, text, formatting)
+            self.stdscr.addstr(y, x, text)  # , formatting)
 
             cur_y = y
 

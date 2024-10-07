@@ -7,7 +7,7 @@ import json
 import os
 
 from encryption_manager import encryption_manager
-from modules.linksaver import LinkSaver
+# from modules.linksaver import LinkSaver
 from note_tree import NoteTree
 from palette import Palette
 

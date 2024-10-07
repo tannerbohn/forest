@@ -778,7 +778,9 @@ class NoteTree:
                 new_node = self.add_journal_entry(journal_entry)
                 self.context_node = new_node.parent
                 self.context_node.is_collapsed = False
-                self.visible_node_list = self.context_node.get_node_list()
+                self.visible_node_list = self.context_node.get_node_list(
+                    only_visible=True
+                )
                 self.focus_index = self.visible_node_list.index(new_node)
                 return self.render(command_mode=False)
             elif message == "decrypt":

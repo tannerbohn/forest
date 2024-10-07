@@ -96,9 +96,12 @@ def main(stdscr):
         elif c == ord("x"):
             # toggle done state
             T.toggle_done()
-        elif c == ord("b"):
+        elif c == ord("!"):  # 0: ctrl-space #ord("b"):
             # toggle bookmark status of current focus node
             T.toggle_bookmark()
+        elif c == ord("h"):
+            # cycle highlight status of current focus node (switch between colours)
+            T.cycle_highlight()
         elif c == 330:  # delete
             T.delete_focus_node()
         elif c == 24:  # Ctrl-X: cut

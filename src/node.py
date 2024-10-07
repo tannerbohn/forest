@@ -18,6 +18,14 @@ class Node:
 
         self.index = 0
 
+        # TODO: find a nice way to make sure the number of highlights is synched between the palette file and this list
+        self.HIGHLIGHT_HASHTAGS = [f"#HL{i+1}" for i in range(3)]
+        self.highlight_index = None
+        for w in self.text.split()[-3:]:
+            if w in self.HIGHLIGHT_HASHTAGS:
+                self.highlight_index = int(w[-1]) - 1
+                break
+
     def ensure_path(self, text_list):
         if not text_list:
             return self
@@ -79,6 +87,9 @@ class Node:
 
         return done
 
+    def is_highlighted(self):
+        return self.highlight_index is not None
+
     def toggle_done(self):
         if encryption_manager.is_encrypted(self.text):
             return
@@ -98,6 +109,27 @@ class Node:
             # if it is done, but there's no #DONE in the text, it means that a parent/ancestor is marked as done,
             #   in which case, don't do anything
 
+    def cycle_highlight(self):
+        if encryption_manager.is_encrypted(self.text):
+            return
+
+        words = self.text.split()
+
+        if not self.is_highlighted():
+            words.append(self.HIGHLIGHT_HASHTAGS[0])
+            self.highlight_index = 0
+
+        else:
+            words.remove(self.HIGHLIGHT_HASHTAGS[self.highlight_index])
+            self.highlight_index = self.highlight_index + 1
+            if self.highlight_index >= len(self.HIGHLIGHT_HASHTAGS):
+                self.highlight_index = None
+
+            if self.highlight_index is not None:
+                words.append(self.HIGHLIGHT_HASHTAGS[self.highlight_index])
+
+        self.text = " ".join(words)
+
     def get_days_old(self, recurse=False):
         days = (datetime.now() - self.creation_time).days
         if self.is_collapsed or recurse:
@@ -110,7 +142,7 @@ class Node:
         if encryption_manager.is_encrypted(self.text):
             text = "█" * (len(self.text) // 5)
         if indentation:
-            return "► " + text
+            return "► " + text  # "- "+text #
         else:
             return text
 

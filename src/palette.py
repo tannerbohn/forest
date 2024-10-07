@@ -9,6 +9,7 @@ class Palette:
         self.light_background = self.create_color(colour_scheme["top_bar_background"])
 
         self.default_text = self.create_color(colour_scheme["default_text"])
+
         self.highlight = self.create_color(colour_scheme["primary_highlight"])
         self.highlight_2 = self.create_color(colour_scheme["secondary_highlight"])
 
@@ -18,8 +19,19 @@ class Palette:
         self.top_bar = self.create_pair(self.default_text, self.light_background)
 
         self.bookmark = self.create_pair(self.highlight_2, self.background)
+        self.red = self.create_pair(self.create_color((255, 38, 89)), self.background)
+        self.orange = self.create_pair(
+            self.create_color((255, 123, 0)), self.background
+        )
         self.yellow = self.create_pair(
-            self.create_color((255, 255, 0)), self.background
+            self.create_color((214, 186, 0)), self.background
+        )
+        self.green = self.create_pair(self.create_color((0, 184, 117)), self.background)
+        self.purple = self.create_pair(
+            self.create_color((147, 38, 255)), self.background
+        )
+        self.white = self.create_pair(
+            self.create_color((255, 255, 255)), self.background
         )
 
         self.age_0_colour = self.create_color(colour_scheme["age_0"])
@@ -40,15 +52,22 @@ class Palette:
         self.status_section = self.create_pair(self.highlight, self.light_background)
         self.collapse_indicator = self.create_pair(self.highlight_2, self.background)
 
+        self.line_highlights = [
+            self.create_pair(self.highlight, self.background),
+            self.yellow,
+            self.red,
+        ]
+
         question_colour = self.highlight_2
         self.question = self.create_pair(question_colour, self.background)
 
     def create_color(self, color):
-        if isinstance(color, str) and color[0] == "#":
-            color = color[1:]
-            r, g, b = tuple(int(color[i : i + 2], 16) for i in (0, 2, 4))
-        else:
-            r, g, b = color
+        r, g, b = get_rgb(color)
+        # if isinstance(color, str) and color[0] == "#":
+        #     color = color[1:]
+        #     r, g, b = tuple(int(color[i : i + 2], 16) for i in (0, 2, 4))
+        # else:
+        #     r, g, b = color
         self.i += 1
         curses.init_color(
             self.i, int(1000 * r / 256), int(1000 * g / 256), int(1000 * b / 256)
@@ -59,3 +78,22 @@ class Palette:
         self.i += 1
         curses.init_pair(self.i, foreground, background)
         return curses.color_pair(self.i)
+
+
+def get_rgb(color_spec):
+    if isinstance(color_spec, str) and color_spec[0] == "#":
+        color_spec = color_spec[1:]
+        r, g, b = tuple(int(color_spec[i : i + 2], 16) for i in (0, 2, 4))
+    else:
+        r, g, b = color_spec
+    return r, g, b
+
+
+def blend_colours(colour_a, colour_b, frac):
+    rgb_a = get_rgb(colour_a)
+    rgb_b = get_rgb(colour_b)
+    r = int(rgb_a[0] * (1 - frac) + rgb_b[0] * frac)
+    g = int(rgb_a[1] * (1 - frac) + rgb_b[1] * frac)
+    b = int(rgb_a[2] * (1 - frac) + rgb_b[2] * frac)
+
+    return (r, g, b)

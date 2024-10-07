@@ -22,5 +22,17 @@
         "age_2":"#0d749d",
         "age_3":"#13556d",
         "age_4":"#19363d"
+    },
+    "notebook": {
+        "background": "#fffedb",
+        "top_bar_background": "#00b3ff",
+        "default_text": "#000000",
+        "primary_highlight": "#d4002e",
+        "secondary_highlight": "#d4002e",
+        "age_0":"#00b3ff",
+        "age_1":"#0793cd",
+        "age_2":"#0d749d",
+        "age_3":"#13556d",
+        "age_4":"#19363d"
     }
 }

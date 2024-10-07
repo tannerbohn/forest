@@ -12,7 +12,9 @@ import pyclip
 from encryption_manager import encryption_manager
 from node import Node
 from subtrees import subtrees
-from utils import MONTH_ORDER, determine_state_filename, trigram_similarity
+from utils import (MONTH_ORDER, convert_to_nested_list,
+                   determine_state_filename, normalize_indentation,
+                   trigram_similarity)
 
 EDIT_MODE_ESC = False
 
@@ -109,9 +111,9 @@ class NoteTree:
                                 context_node = matching_node
                             elif isinstance(prop, list) and prop[0] == "bookmark":
                                 self.bookmarks[prop[1]] = matching_node
-                                self.bookmark_last_use_times[
-                                    prop[1]
-                                ] = datetime.fromtimestamp(prop[2])
+                                self.bookmark_last_use_times[prop[1]] = (
+                                    datetime.fromtimestamp(prop[2])
+                                )
 
         for n in node_list:
             n.creation_time = creation_time_map.get(n.get_key(), datetime.now())
@@ -201,6 +203,11 @@ class NoteTree:
         focus_node.toggle_done()
         self.has_unsaved_operations = True
 
+    def cycle_highlight(self):
+        focus_node = self.visible_node_list[self.focus_index]
+        focus_node.cycle_highlight()
+        self.has_unsaved_operations = True
+
     def toggle_bookmark_panel(self):
         self.show_bookmark_panel = not self.show_bookmark_panel
 
@@ -242,10 +249,13 @@ class NoteTree:
 
         self.focus_index = self.visible_node_list.index(focus_node)
 
-    def find_matches(self, query):
+    def find_matches(self, query, global_scope=True):
         # find the node in the tree that best matches the query string
 
-        node_list = self.get_node_list()
+        if global_scope:
+            node_list = self.get_node_list()
+        else:
+            node_list = self.context_node.get_node_list(only_visible=False)
 
         matching_nodes = []
 
@@ -434,10 +444,34 @@ class NoteTree:
             for n in self.cut_nodes[::-1]:
                 focus_node.paste_node_here(n)
             self.cut_nodes = []
-            self.index_nodes()
-            self.visible_node_list = self.context_node.get_node_list(only_visible=True)
-            self.focus_index = min(self.focus_index, len(self.visible_node_list) - 1)
-            self.has_unsaved_operations = True
+        else:
+            self.paste_from_clipboard()
+
+        self.index_nodes()
+        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.focus_index = min(self.focus_index, len(self.visible_node_list) - 1)
+        self.has_unsaved_operations = True
+
+    def paste_from_clipboard(self):
+        # TODO: let this use ctrl-v -- use content to determine whether to use cut nodes or to use clipboard
+        # get clipboard contents
+        try:
+            text = pyclip.paste(text=True)
+        except:
+            # doesn't seem to wrk on all systems
+            return
+
+        # if we can convert the text into a nested list, we should be able to use the existing subtree pasting method
+        lines = text.splitlines()
+
+        # normalize indentation to work with lists from multiple sources
+        lines = normalize_indentation(lines)
+
+        nested_list = convert_to_nested_list(lines)
+
+        focus_node = self.visible_node_list[self.focus_index]
+
+        insert_nested_list(focus_node, nested_list)
 
     def find_hashtag_sources(self):
         # first extract the hashtags (not slugs)
@@ -534,7 +568,8 @@ class NoteTree:
         if self.cut_nodes:
             cut_text = f"[{len(self.cut_nodes)} cut]"
 
-        pct_text = f"{100*(self.focus_index + 1)/len(self.visible_node_list):.0f}%"
+        # pct_text = f"{100*(self.focus_index + 1)/len(self.visible_node_list):.0f}%"
+        pct_text = f"{(self.focus_index + 1)}/{len(self.visible_node_list)}"
 
         unsaved_text = ""
         unsaved_changes_str = "[Unsaved changes]"
@@ -696,8 +731,11 @@ class NoteTree:
             if query_mode or jump_to_citations or jump_to_sources:
                 matching_nodes = []
                 if query_mode:
-                    query = message[1:].strip()
-                    matching_nodes = self.find_matches(query=query)
+                    global_scope = message.startswith("??")
+                    query = message.lstrip("? ")
+                    matching_nodes = self.find_matches(
+                        query=query, global_scope=global_scope
+                    )
                 elif jump_to_sources:
                     matching_nodes = self.find_hashtag_sources()
                 elif jump_to_citations:
@@ -782,6 +820,7 @@ class NoteTree:
 
                 node = self.visible_node_list[node_index]
                 is_done = node.is_done()
+                is_highlighted = node.is_highlighted()
 
                 age_text = "▌".ljust(line_num_chars)
 
@@ -819,8 +858,10 @@ class NoteTree:
                     # first draw the full text
                     try:
                         formatting = curses.A_NORMAL
-                        coloring = 0  # if not "#a" in node.text.split() else self.palette.bookmark
+
+                        coloring = 0
                         if is_done:
+                            # if self.palette.default_text > self.palette.background:
                             formatting = formatting | curses.A_DIM
 
                         if node.depth == root_depth + 1:
@@ -829,9 +870,15 @@ class NoteTree:
                         if node in self.cut_nodes:
                             formatting = formatting | curses.A_UNDERLINE
 
+                        if is_highlighted:
+                            coloring = self.palette.line_highlights[
+                                node.highlight_index
+                            ]
+
                         self.stdscr.addstr(line_num, 0, chunk, formatting | coloring)
 
-                        ch = "►"
+                        ch = "►"  # "-" #
+
                         if ch in chunk:
                             if is_focus:
                                 self.stdscr.addstr(
@@ -863,7 +910,7 @@ class NoteTree:
                         if "#" in chunk:
                             matches = re.findall(r"\B#[a-zA-Z\-]+", chunk)
                             for m in matches:
-                                if m in ["#DONE", "#ENCRYPT"]:
+                                if m in ["#DONE", "#ENCRYPT", "#HL"]:
                                     continue
                                 if node.text.startswith(m):
                                     coloring = self.palette.hashtag
@@ -874,7 +921,7 @@ class NoteTree:
                                     line_num, chunk.find(m), m, formatting | coloring
                                 )
 
-                        if "?" in chunk:
+                        if "?" in chunk and not is_highlighted:
                             self.stdscr.addstr(
                                 line_num,
                                 chunk.find("?"),
@@ -1047,6 +1094,7 @@ def edit_validator(ch):
     if ch == 353:  # shift-tab
         return "<"
     # print(ch)
+
     if ch in [7, 10, 27]:  # 27 == esc
         if ch == 27:
             EDIT_MODE_ESC = True
@@ -1060,6 +1108,15 @@ def add_subtree(node, tree):
         child = node.add_child(k)
         if v:
             add_subtree(child, v)
+
+
+def insert_nested_list(node, nested_list):
+    for item in nested_list:
+        if isinstance(item, str):
+            _ = node.add_child(item)
+        else:
+            child = node.add_child(item[0])
+            insert_nested_list(child, item[1])
 
 
 # def add_scamper_structure(node):

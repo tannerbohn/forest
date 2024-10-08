@@ -12,9 +12,13 @@ import pyclip
 from encryption_manager import encryption_manager
 from node import Node
 from subtrees import subtrees
-from utils import (MONTH_ORDER, convert_to_nested_list,
-                   determine_state_filename, normalize_indentation,
-                   trigram_similarity)
+from utils import (
+    MONTH_ORDER,
+    convert_to_nested_list,
+    determine_state_filename,
+    normalize_indentation,
+    trigram_similarity,
+)
 
 EDIT_MODE_ESC = False
 
@@ -135,9 +139,13 @@ class NoteTree:
 
         self.plugins = []
 
+        self.remove_expired_notes()
+
     def save(self):
         # apply encryption where needed
         self.encrypt()
+
+        self.remove_expired_notes()
 
         node_list = self.get_node_list(only_visible=False)
 
@@ -184,6 +192,31 @@ class NoteTree:
 
     def get_node_list(self, only_visible=False):
         return self.root.get_node_list(only_visible=only_visible)
+
+    def remove_expired_notes(self):
+        focus_node = self.visible_node_list[self.focus_index]
+        # TODO: need to account for possibility that context node is also removed out from under us
+        self.root.remove_expired_notes()
+        node_list = self.index_nodes()
+
+        while self.context_node not in node_list:
+            self.context_node = self.context_node.parent
+
+        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+
+        if focus_node in self.visible_node_list:
+            self.focus_index = self.visible_node_list.index(focus_node)
+        else:
+            while focus_node not in self.visible_node_list:
+                focus_node = focus_node.parent
+
+            if focus_node is None:
+                self.focus_index = 0
+            else:
+                self.focus_index = self.visible_node_list.index(focus_node)
+
+        # focus_node = self.visible_node_list[self.focus_index]
+        # index = focus_node.parent.children.index(focus_node)
 
     def search(self, text):
         to_search = self.root.children
@@ -823,21 +856,38 @@ class NoteTree:
                 node = self.visible_node_list[node_index]
                 is_done = node.is_done()
                 is_highlighted = node.is_highlighted()
-
-                age_text = "▌".ljust(line_num_chars)
+                is_self_deleting = node.is_self_deleting()
 
                 days_old = node.get_days_old()
+                age_char = "▌"
                 age_color = None
-                if days_old <= 2:
-                    age_color = self.palette.age_0
-                elif days_old <= 7:
-                    age_color = self.palette.age_1
-                elif days_old <= 30:
-                    age_color = self.palette.age_2
-                elif days_old <= 356:
-                    age_color = self.palette.age_3
+                if not is_self_deleting:
+                    if days_old <= 2:
+                        age_color = self.palette.age_0
+                    elif days_old <= 7:
+                        age_color = self.palette.age_1
+                    elif days_old <= 30:
+                        age_color = self.palette.age_2
+                    elif days_old <= 356:
+                        age_color = self.palette.age_3
+                    else:
+                        age_color = self.palette.age_4
                 else:
-                    age_color = self.palette.age_4
+                    days_remaining = node.get_days_remaining()
+                    if days_remaining <= 2:
+                        age_char = "█"
+                        age_color = self.palette.expiry_4
+                    elif days_remaining <= 7:
+                        age_char = "▊"
+                        age_color = self.palette.expiry_3
+                    elif days_remaining <= 30:
+                        age_color = self.palette.expiry_2
+                    elif days_remaining <= 356:
+                        age_color = self.palette.expiry_1
+                    else:
+                        age_color = self.palette.expiry_0
+
+                age_text = age_char.ljust(line_num_chars)
 
                 is_last_child = node.parent.children[-1] == node
 
@@ -993,7 +1043,7 @@ class NoteTree:
                 if node_index < len(self.visible_node_list) - 1:
                     next_depth = self.visible_node_list[node_index + 1].depth
                     if next_depth < root_depth + 2:
-                        text = "▌" + " " * (curses.COLS - 1)
+                        text = age_char + " " * (curses.COLS - 1)
 
                         self.stdscr.addstr(
                             line_num, 0, text, curses.A_NORMAL | age_color

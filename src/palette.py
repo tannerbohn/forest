@@ -19,14 +19,14 @@ class Palette:
         self.top_bar = self.create_pair(self.default_text, self.light_background)
 
         self.bookmark = self.create_pair(self.highlight_2, self.background)
-        self.red = self.create_pair(self.create_color((255, 38, 89)), self.background)
+        self.red = self.create_pair(self.create_color((255, 77, 0)), self.background)
         self.orange = self.create_pair(
             self.create_color((255, 123, 0)), self.background
         )
         self.yellow = self.create_pair(
-            self.create_color((214, 186, 0)), self.background
+            self.create_color((214, 166, 0)), self.background
         )
-        self.green = self.create_pair(self.create_color((0, 184, 117)), self.background)
+        self.green = self.create_pair(self.create_color((78, 91, 49)), self.background)
         self.purple = self.create_pair(
             self.create_color((147, 38, 255)), self.background
         )
@@ -34,6 +34,7 @@ class Palette:
             self.create_color((255, 255, 255)), self.background
         )
 
+        # useful resource: https://colorkit.io/
         self.age_0_colour = self.create_color(colour_scheme["age_0"])
         self.age_1_colour = self.create_color(colour_scheme["age_1"])
         self.age_2_colour = self.create_color(colour_scheme["age_2"])
@@ -45,6 +46,24 @@ class Palette:
         self.age_2 = self.create_pair(self.age_2_colour, self.background)
         self.age_3 = self.create_pair(self.age_3_colour, self.background)
         self.age_4 = self.create_pair(self.age_4_colour, self.background)
+
+        # Note: for both age colouring and expiry colouring, its ordered by time. So for expiry, it starts at
+        #   expiry_0, and gets closer to expiry_4 as the time draws closer
+        self.expiry_0 = self.create_pair(
+            self.create_color(colour_scheme["expiry_0"]), self.background
+        )
+        self.expiry_1 = self.create_pair(
+            self.create_color(colour_scheme["expiry_1"]), self.background
+        )
+        self.expiry_2 = self.create_pair(
+            self.create_color(colour_scheme["expiry_2"]), self.background
+        )
+        self.expiry_3 = self.create_pair(
+            self.create_color(colour_scheme["expiry_3"]), self.background
+        )
+        self.expiry_4 = self.create_pair(
+            self.create_color(colour_scheme["expiry_4"]), self.background
+        )
 
         self.hashtag = self.create_pair(self.highlight, self.background)
         self.focus_arrow = self.bookmark

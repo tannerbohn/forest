@@ -1,6 +1,7 @@
 import re
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
+from pytimeparse import parse
 
 from encryption_manager import encryption_manager
 
@@ -25,6 +26,21 @@ class Node:
             if w in self.HIGHLIGHT_HASHTAGS:
                 self.highlight_index = int(w[-1]) - 1
                 break
+
+        self.expiry_datetime = None
+        self.extract_expiry()
+
+    def remove_expired_notes(self):
+
+        if self.parent is None:
+            for child in self.children:
+                child.remove_expired_notes()
+        else:
+            if self.expiry_datetime and datetime.now() > self.expiry_datetime:
+                self.delete_branch()
+            else:
+                for child in self.children:
+                    child.remove_expired_notes()
 
     def ensure_path(self, text_list):
         if not text_list:
@@ -90,6 +106,54 @@ class Node:
     def is_highlighted(self):
         return self.highlight_index is not None
 
+    def is_self_deleting(self):
+        return self.get_expiry() is not None
+
+    def get_expiry(self):
+        if self.expiry_datetime:
+            return self.expiry_datetime
+        if self.parent is None:
+            return None
+        return self.parent.get_expiry()
+
+    def extract_expiry(self):
+        words = self.text.split()
+        self.expiry_datetime = None
+        for w in words:
+            # if w.startswith("#EXPIRY-"):
+            #     time_str = w.split("-", 1)[1]
+            #     try:
+            #         dt = datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%S")
+            #         self.expiry_datetime = dt
+            #     except ValueError:
+            #         pass
+            #     break
+            if w.startswith("#T-"):
+                time_str = w.split("-", 1)[1]
+                if "-" in time_str:
+                    try:
+                        dt = datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%S")
+                        self.expiry_datetime = dt
+                    except ValueError:
+                        pass
+                    break
+                else:
+                    duration = time_str
+                    duration_seconds = parse(duration)
+                    if duration_seconds is not None:
+                        self.expiry_datetime = datetime.now() + timedelta(
+                            seconds=duration_seconds
+                        )
+                        words.remove(w)
+                        words.append(
+                            self.expiry_datetime.strftime("#T-%Y-%m-%dT%H:%M:%S")
+                        )
+                        self.text = " ".join(words)
+                    break
+
+    def get_days_remaining(self):
+        return (self.get_expiry() - datetime.now()).days
+
     def toggle_done(self):
         if encryption_manager.is_encrypted(self.text):
             return
@@ -130,6 +194,33 @@ class Node:
 
         self.text = " ".join(words)
 
+    # def cycle_expiry(self):
+    #     if encryption_manager.is_encrypted(self.text):
+    #         return
+
+    #     EXPIRY_OPTIONS = ["#T-1d", "#T-7d", "#T-30d"]
+
+    #     words = self.text.split()
+
+    #     if not self.is_self_deleting():
+    #         words.append(EXPIRY_OPTIONS[0])
+    #         dur = parse(EXPIRY_OPTIONS[0].split("-")[1])
+    #         self.expiry_datetime = datetime.now() + timedelta(seconds=dur)
+    #     else:
+    #         for w in words:
+    #             if w.startswith("#T-"):
+    #                 if w in EXPIRY_OPTIONS:
+    #                     self.expiry_datetime = None
+    #                     i = EXPIRY_OPTIONS.index(w)
+    #                     words.remove(w)
+    #                     if i < len(EXPIRY_OPTIONS) - 1:
+    #                         words.append(EXPIRY_OPTIONS[i+1])
+    #                         dur = parse(EXPIRY_OPTIONS[i+1].split("-")[1])
+    #                         self.expiry_datetime = datetime.now() + timedelta(seconds=dur)
+    #                 break  # if it's a custom expiry, leave it alone
+
+    #     self.text = " ".join(words)
+
     def get_days_old(self, recurse=False):
         days = (datetime.now() - self.creation_time).days
         if self.is_collapsed or recurse:
@@ -141,6 +232,12 @@ class Node:
         text = self.text
         if encryption_manager.is_encrypted(self.text):
             text = "█" * (len(self.text) // 5)
+
+        if "#T-" in self.text:
+            words = text.split()
+            words = [w for w in words if not w.startswith("#T-")]
+            text = " ".join(words)
+
         if indentation:
             return "► " + text  # "- "+text #
         else:
@@ -279,6 +376,7 @@ class Node:
 
     def stop_edit_mode(self):
         self.edit_mode = False
+        self.extract_expiry()  # check if the expiry has changed
 
     def encrypt(self, force=False):
         already_encrypted = encryption_manager.is_encrypted(self.text)

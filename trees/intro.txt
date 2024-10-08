@@ -1,3 +1,5 @@
+- What is Forest?
+	- Forest is a note-taking/brainstorming interface made with pycurses which is built around the idea of organizing notes into nested branches, and being able to zoom into branches
 - Moving around
 	- up and down
 	- left (move up in the tree), right (move deeper into the tree -- useful if you want to focus on something)
@@ -26,7 +28,7 @@
 	- Highlighting notes by pressing "h". Press multiple times to cycle through the options
 		- they can be this primary highlight colour #HL1
 		- or yellow #HL2
-		- or red #HL3
+		- or orange #HL3
 - Collapsing (press space on any note with children)
 - Command mode (enter command mode with :)
 	- searching for a note: :? <query>
@@ -46,6 +48,12 @@
 	- journal entries are automatically sorted into branches for the year and month
 - What's up with the blue strip on the left?
 	- This strip reflects the age of a note. New ones are bright blue, and as the get older, they will slowly fade
+- Expiring notes
+	- You can set a note (and all of it's children) to delete themselves after a certain duration
+		- Simply add "#T-1d" for example, to set the expiry to 1 day from now. Other examples: "#T-12h", "#T-4w", "#T-30s". Only s(econds), m(inutes), h(ours), d(ays), and w(eeks) are supported
+		- After specifying the expiry in this simplified format, it will be automatically replaced with the exact expiry time (e.g. "#T-2024-10-25T01:13:20"). You can edit this string to change the expiry
+	- When a note has an expiry, the blue strip on the left will instead be orange, becoming more vibrant as the expiry time approaches
+	- At the moment, deletion is only performed upon saving or file loading
 - Encrypting and decrypting
 	- to mark a branch as to-be-encrypted, add "# ENCRYPT" (without the space) in the root note of the branch
 		- upon saving, you may be prompted for an encryption key

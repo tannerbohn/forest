@@ -7,6 +7,7 @@ import json
 import os
 
 from encryption_manager import encryption_manager
+
 # from modules.linksaver import LinkSaver
 from note_tree import NoteTree
 from palette import Palette
@@ -102,6 +103,9 @@ def main(stdscr):
         elif c == ord("h"):
             # cycle highlight status of current focus node (switch between colours)
             T.cycle_highlight()
+        # elif c == ord("t"):
+        #     # cycle expiry duration of current focus node
+        #     T.cycle_expiry()
         elif c == 330:  # delete
             T.delete_focus_node()
         elif c == 24:  # Ctrl-X: cut

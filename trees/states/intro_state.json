@@ -1,69 +1,83 @@
 [
     [
         1,
+        "/intro.txt>What is Forest?",
+        [
+            "2024-10-07"
+        ]
+    ],
+    [
+        2,
+        "/intro.txt>is Forest?>ing able to zoom into branches",
+        [
+            "2024-10-07"
+        ]
+    ],
+    [
+        3,
         "/intro.txt>Moving around",
         [
             "2024-01-22"
         ]
     ],
     [
-        2,
+        4,
         "/intro.txt>ing around>up and down",
         [
             "2024-01-22"
         ]
     ],
     [
-        3,
+        5,
         "/intro.txt>ing around>ou want to focus on something)",
         [
             "2024-01-22"
         ]
     ],
     [
-        4,
+        6,
         "/intro.txt>ing around>current section of the tree: r",
         [
             "2024-01-22"
         ]
     ],
     [
-        5,
+        7,
         "/intro.txt>ing around> have saved any changes first!",
         [
             "2024-01-22"
         ]
     ],
     [
-        6,
+        8,
         "/intro.txt>Creating new notes",
         [
             "2024-01-22"
         ]
     ],
     [
-        7,
+        9,
         "/intro.txt> new notes> below where you want the note",
         [
             "2024-01-22"
         ]
     ],
     [
-        8,
+        10,
         "/intro.txt> new notes>tart to indent or de-indent it",
         [
             "2024-01-22"
         ]
     ],
     [
-        9,
+        11,
         "/intro.txt> new notes>nserted below the current note",
         [
             "2024-10-07"
         ]
     ],
     [
-        10,
+        12,
         "/intro.txt>ook! This branch is collapsed!",
         [
             "collapsed",
@@ -71,42 +85,42 @@
         ]
     ],
     [
-        11,
+        13,
         "/intro.txt>collapsed!>can have so many things inside",
         [
             "2024-01-22"
         ]
     ],
     [
-        12,
+        14,
         "/intro.txt>#Editing notes",
         [
             "2024-01-22"
         ]
     ],
     [
-        13,
+        15,
         "/intro.txt>ting notes> Or Esc to cancel your changes",
         [
             "2024-01-22"
         ]
     ],
     [
-        14,
+        16,
         "/intro.txt>ting notes> again to toggle status) #DONE",
         [
             "2024-01-22"
         ]
     ],
     [
-        15,
+        17,
         "/intro.txt>ting notes>d de-indent: tab and shift+tab",
         [
             "2024-01-22"
         ]
     ],
     [
-        16,
+        18,
         "/intro.txt>ting notes>note (like this one), type \"!\"",
         [
             [
@@ -118,105 +132,105 @@
         ]
     ],
     [
-        17,
+        19,
         "/intro.txt>ting notes>, type \"!\">same key will hide this window",
         [
             "2024-01-22"
         ]
     ],
     [
-        18,
+        20,
         "/intro.txt>ting notes>, type \"!\">his window>u need to refer to frequently)",
         [
             "2024-01-22"
         ]
     ],
     [
-        19,
+        21,
         "/intro.txt>ting notes>, type \"!\"> of 10 bookmarks are supported",
         [
             "2024-01-22"
         ]
     ],
     [
-        20,
+        22,
         "/intro.txt>ting notes>, type \"!\">th the bookmark (found with `)",
         [
             "2024-01-22"
         ]
     ],
     [
-        21,
+        23,
         "/intro.txt>ting notes>adding #hashtags",
         [
             "2024-01-22"
         ]
     ],
     [
-        22,
+        24,
         "/intro.txt>ting notes> #hashtags> WORDS are used as the hashtag",
         [
             "2024-01-22"
         ]
     ],
     [
-        23,
+        25,
         "/intro.txt>ting notes> #hashtags> are called \"linking\" hashtags",
         [
             "2024-01-22"
         ]
     ],
     [
-        24,
+        26,
         "/intro.txt>ting notes>te (currently no undo feature)",
         [
             "2024-01-22"
         ]
     ],
     [
-        25,
+        27,
         "/intro.txt>ting notes>mong its siblings, use u and d",
         [
             "2024-01-22"
         ]
     ],
     [
-        26,
+        28,
         "/intro.txt>ting notes>s to cycle through the options",
         [
             "2024-10-07"
         ]
     ],
     [
-        27,
+        29,
         "/intro.txt>ting notes>he options> primary highlight colour #HL1",
         [
             "2024-10-07"
         ]
     ],
     [
-        28,
+        30,
         "/intro.txt>ting notes>he options>or yellow #HL2",
         [
             "2024-10-07"
         ]
     ],
     [
-        29,
-        "/intro.txt>ting notes>he options>or red #HL3",
+        31,
+        "/intro.txt>ting notes>he options>or orange #HL3",
         [
             "2024-10-07"
         ]
     ],
     [
-        30,
+        32,
         "/intro.txt>ace on any note with children)",
         [
             "2024-01-22"
         ]
     ],
     [
-        31,
+        33,
         "/intro.txt>de (enter command mode with :)",
         [
             "collapsed",
@@ -224,7 +238,7 @@
         ]
     ],
     [
-        32,
+        34,
         "/intro.txt>de with :)>arching for a note: :? <query>",
         [
             "collapsed",
@@ -232,182 +246,225 @@
         ]
     ],
     [
-        33,
+        35,
         "/intro.txt>de with :)>:? <query>>one within the current context",
         [
             "2024-05-19"
         ]
     ],
     [
-        34,
+        36,
         "/intro.txt>de with :)>:? <query>>is done through the whole tree",
         [
             "2024-05-19"
         ]
     ],
     [
-        35,
+        37,
         "/intro.txt>de with :)>:> (to find the linking notes)",
         [
             "2024-01-22"
         ]
     ],
     [
-        36,
+        38,
         "/intro.txt>de with :)>ing notes)>es is the \"Editing notes\" note",
         [
             "2024-01-22"
         ]
     ],
     [
-        37,
+        39,
         "/intro.txt>de with :)>ing notes)>le through the \"linking\" note.",
         [
             "2024-01-22"
         ]
     ],
     [
-        38,
+        40,
         "/intro.txt>de with :)>ing notes)> Enter to choose where to stop",
         [
             "2024-01-22"
         ]
     ],
     [
-        39,
+        41,
         "/intro.txt>Copying and pasting notes",
         [
             "2024-01-22"
         ]
     ],
     [
-        40,
+        42,
         "/intro.txt>ting notes>e note text to your clipboard)",
         [
             "2024-01-22"
         ]
     ],
     [
-        41,
+        43,
         "/intro.txt>ting notes>ut the notes, and press Ctrl-V",
         [
             "2024-01-22"
         ]
     ],
     [
-        42,
+        44,
         "/intro.txt>ting notes>el your copy action, press Esc",
         [
             "2024-01-22"
         ]
     ],
     [
-        43,
+        45,
         "/intro.txt>nges (hit the s key, or :save)",
         [
             "2024-01-22"
         ]
     ],
     [
-        44,
+        46,
         "/intro.txt>Using the journal",
         [
             "2024-01-22"
         ]
     ],
     [
-        45,
+        47,
         "/intro.txt>he journal>y be created), use :j+ <entry>",
         [
             "2024-01-22"
         ]
     ],
     [
-        46,
+        48,
         "/intro.txt>he journal>ranches for the year and month",
         [
             "2024-01-22"
         ]
     ],
     [
-        47,
+        49,
         "/intro.txt>th the blue strip on the left?",
         [
             "2024-01-22"
         ]
     ],
     [
-        48,
+        50,
         "/intro.txt> the left?>t older, they will slowly fade",
         [
             "2024-01-22"
         ]
     ],
     [
-        49,
+        51,
+        "/intro.txt>Expiring notes",
+        [
+            "2024-10-08"
+        ]
+    ],
+    [
+        52,
+        "/intro.txt>ring notes>elves after a certain duration",
+        [
+            "2024-10-08"
+        ]
+    ],
+    [
+        53,
+        "/intro.txt>ring notes>n duration>ys), and w(eeks) are supported",
+        [
+            "2024-10-08"
+        ]
+    ],
+    [
+        54,
+        "/intro.txt>ring notes>n duration>is string to change the expiry",
+        [
+            "2024-10-08"
+        ]
+    ],
+    [
+        55,
+        "/intro.txt>ring notes> as the expiry time approaches",
+        [
+            "2024-10-08"
+        ]
+    ],
+    [
+        56,
+        "/intro.txt>ring notes>ed upon saving or file loading",
+        [
+            "2024-10-08"
+        ]
+    ],
+    [
+        57,
         "/intro.txt>Encrypting and decrypting",
         [
+            "collapsed",
             "2024-01-22"
         ]
     ],
     [
-        50,
+        58,
         "/intro.txt>decrypting>in the root note of the branch",
         [
             "2024-01-22"
         ]
     ],
     [
-        51,
+        59,
         "/intro.txt>decrypting>the branch>prompted for an encryption key",
         [
             "2024-01-22"
         ]
     ],
     [
-        52,
+        60,
         "/intro.txt>decrypting>f you haven't done so recently",
         [
             "2024-01-22"
         ]
     ],
     [
-        53,
+        61,
         "/intro.txt>decrypting>Fernet; Fernet.generate_key()`",
         [
             "2024-01-22"
         ]
     ],
     [
-        54,
+        62,
         "/intro.txt>decrypting>ate_key()`>make sure you don't lose this",
         [
             "2024-01-22"
         ]
     ],
     [
-        55,
+        63,
         "/intro.txt>Colour Scheme",
         [
             "2024-01-22"
         ]
     ],
     [
-        56,
+        64,
         "/intro.txt>our Scheme>n entry in colour_schemes.json",
         [
             "2024-01-22"
         ]
     ],
     [
-        57,
+        65,
         "/intro.txt>Executable notes",
         [
             "2024-01-22"
         ]
     ],
     [
-        58,
+        66,
         "/intro.txt>able notes>ents in a subprocess with :run",
         [
             "2024-01-22"

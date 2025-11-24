@@ -1,9 +1,13 @@
+import logging
 import re
 import subprocess
+from collections import defaultdict
 from datetime import datetime, timedelta
+
 from pytimeparse import parse
 
-from encryption_manager import encryption_manager
+# from encryption_manager import encryption_manager
+logger = logging.getLogger(__name__)
 
 
 class Node:
@@ -13,7 +17,6 @@ class Node:
         self.children = []
         self.depth = depth
         self.is_collapsed = is_collapsed
-        self.edit_mode = False
 
         self.creation_time = datetime.now()
 
@@ -29,6 +32,20 @@ class Node:
 
         self.expiry_datetime = None
         self.extract_expiry()
+
+        self.value_dict: dict = {}
+        self.extract_values()
+
+    def extract_values(self) -> None:
+        self.value_dict = {}
+        for key, value in re.findall(
+            r"\$([a-zA-Z_]+)\s?=\s?([\-\+]?[\d.]+)", self.text
+        ):
+            try:
+                value = float(value)
+            except ValueError:
+                continue
+            self.value_dict[key.lower()] = value
 
     def remove_expired_notes(self):
 
@@ -78,6 +95,13 @@ class Node:
         matches = re.findall(r"#([a-z\-]+)", self.text)
         return matches
 
+    def get_highlight_hashtag(self):
+        matches = re.findall(r"\B#(HL[123])", self.text)
+        if matches:
+            return matches[0]
+        else:
+            return None
+
     def get_path(self, include_self):
         parts = []
         if include_self:
@@ -88,6 +112,25 @@ class Node:
             cur_node = cur_node.parent
 
         return parts[::-1]
+
+    def get_path_string(self, width: int = 50):
+        parts = self.get_path(include_self=True)[1:]
+
+        if not parts:
+            return ""
+
+        nb_parts = len(parts)
+        max_part_length = max((width - 3 * nb_parts) / nb_parts, 15)
+
+        path_str = " ▶ ".join(
+            [
+                p if len(p) < max_part_length else p[: int(max_part_length) - 3] + "..."
+                for p in parts
+            ]
+        )
+        if len(path_str) > width:
+            path_str = "..." + path_str[-(width - 3) :]
+        return path_str
 
     def is_done(self, consider_parent=True):
         done = False
@@ -155,14 +198,33 @@ class Node:
         return (self.get_expiry() - datetime.now()).days
 
     def toggle_done(self):
-        if encryption_manager.is_encrypted(self.text):
-            return
+        # if encryption_manager.is_encrypted(self.text):
+        #     return
 
         words = self.text.split()
 
         if not self.is_done():
             words.append("#DONE")
+
+            if self.parent.is_well_root():
+                words = [w for w in words if not w.startswith("#due")]
+                due_datetime = self.get_well_next_due_datetime()
+                if due_datetime:
+                    words.append(f"#due={due_datetime.strftime('%Y-%m-%dT%H:%M:%S')}")
+
+            # look through value dict for anything to increment or decrement
+            for k, v in self.value_dict.items():
+                delta = 0
+                if k.endswith("_inc"):
+                    delta = 1
+                elif k.endswith("_dec"):
+                    delta = -1
+                if delta:
+                    old_word = [w for w in words if w.lower().startswith("$" + k)][0]
+                    words[words.index(old_word)] = f"${k}={v+delta}"
+
             self.text = " ".join(words)
+            self.post_text_update()
         else:
             if "#DONE" in words:
                 words.remove("#DONE")
@@ -174,8 +236,8 @@ class Node:
             #   in which case, don't do anything
 
     def cycle_highlight(self):
-        if encryption_manager.is_encrypted(self.text):
-            return
+        # if encryption_manager.is_encrypted(self.text):
+        #     return
 
         words = self.text.split()
 
@@ -228,23 +290,56 @@ class Node:
         else:
             return days
 
-    def get_text(self, indentation=True):
+    def get_text(self):
         text = self.text
-        if encryption_manager.is_encrypted(self.text):
-            text = "█" * (len(self.text) // 5)
+        # if encryption_manager.is_encrypted(self.text):
+        #     text = "█" * (len(self.text) // 5)
 
         if "#T-" in self.text:
             words = text.split()
             words = [w for w in words if not w.startswith("#T-")]
             text = " ".join(words)
 
-        if indentation:
-            return "► " + text  # "- "+text #
-        else:
-            return text
+        # if self.is_collapsed:
+        #     text = text + " [•••]"
+
+        hashtags = self.get_hashtags()
+        if "sum" in hashtags:
+            if branch_values := self.get_branch_values():
+                values_str = "|".join(
+                    [f"Σ{k}={sum(v)}" for k, v in branch_values.items()]
+                )
+                text += f" ({values_str})"
+        if "max" in hashtags:
+            if branch_values := self.get_branch_values():
+                values_str = "|".join(
+                    [f"max({k})={max(v)}" for k, v in branch_values.items()]
+                )
+                text += f" ({values_str})"
+        if "min" in hashtags:
+            if branch_values := self.get_branch_values():
+                values_str = "|".join(
+                    [f"min({k})={min(v)}" for k, v in branch_values.items()]
+                )
+                text += f" ({values_str})"
+        if "avg" in hashtags:
+            if branch_values := self.get_branch_values():
+                values_str = "|".join(
+                    [f"avg({k})={sum(v)/len(v)}" for k, v in branch_values.items()]
+                )
+                text += f" ({values_str})"
+
+        if (
+            self.parent.is_well_root() and self.get_well_next_due_datetime()
+        ):  # to check if valid well item
+            text = "⏲ " + text
+
+        return text
 
     def toggle_collapse(self):
         self.is_collapsed = not self.is_collapsed
+        if not self.children:
+            self.is_collapsed = False
 
     def paste_node_here(self, node):
         if node == self:
@@ -371,38 +466,117 @@ class Node:
                 l.extend(c.get_node_list(only_visible=only_visible))
         return l
 
-    def start_edit_mode(self):
-        self.edit_mode = True
-
-    def stop_edit_mode(self):
-        self.edit_mode = False
+    def post_text_update(self):
         self.extract_expiry()  # check if the expiry has changed
+        self.extract_values()
 
-    def encrypt(self, force=False):
-        already_encrypted = encryption_manager.is_encrypted(self.text)
+    # def encrypt(self, force=False):
+    #     already_encrypted = encryption_manager.is_encrypted(self.text)
 
-        if already_encrypted or "#ENCRYPT" in self.text or force:
-            if not already_encrypted:
-                self.text = encryption_manager.encrypt(self.text)
-            for c in self.children:
-                c.encrypt(force=True)
-        else:
-            for c in self.children:
-                c.encrypt()
+    #     if already_encrypted or "#ENCRYPT" in self.text or force:
+    #         if not already_encrypted:
+    #             self.text = encryption_manager.encrypt(self.text)
+    #         for c in self.children:
+    #             c.encrypt(force=True)
+    #     else:
+    #         for c in self.children:
+    #             c.encrypt()
 
-    def decrypt(self):
-        already_decrypted = not encryption_manager.is_encrypted(self.text)
-        if not already_decrypted:
-            self.text = encryption_manager.decrypt(self.text)
-        for c in self.children:
-            c.decrypt()
+    # def decrypt(self):
+    #     already_decrypted = not encryption_manager.is_encrypted(self.text)
+    #     if not already_decrypted:
+    #         self.text = encryption_manager.decrypt(self.text)
+    #     for c in self.children:
+    #         c.decrypt()
 
     def run_command(self):
         # first check if there is a command -- indicated by .. !
         if not self.text.startswith("!"):
+            logger.info(f"Invalid command: '{self.text}'")
             return
 
         command = self.text[1:] + " > /dev/null 2>&1 &"
 
         # cmdStr=WEB_BROWSER+" https://www.youtube.com/results?search_query="+youtubeStr.replace(' ','+')+" > /dev/null 2>&1 &"
         subprocess.call(command, shell=True)
+        logger.info("Ran command")
+
+    def get_branch_values(self) -> defaultdict:
+        """
+        Recursively collect all of the values defined in notes ($variable=value)
+        """
+
+        all_values = defaultdict(list)
+        for k, v in self.value_dict.items():
+            all_values[k].append(v)
+
+        for n in self.children:
+            for k, v in n.get_branch_values().items():
+                all_values[k].extend(v)
+
+        return all_values
+
+    def is_well_root(self) -> bool:
+        return bool(re.search(r"(^|\s)#WELL\b", self.text))
+
+    def get_well_next_due_datetime(self) -> datetime | None:
+        """If this Well task were completed now, what would the next due time be?"""
+
+        if match := re.search(r"#duration=(\d+[a-z]+)\b", self.text):
+            duration_str = match.group(1)
+            duration_seconds = extended_parse(duration_str)
+            if duration_seconds is None:
+                logger.warning(f"Invalid Well duration string: {duration_str}")
+                return None
+            return datetime.now() + timedelta(seconds=duration_seconds)
+
+        return None
+
+    def get_well_current_due_datetime(self) -> datetime | None:
+        due_datetime = None
+        if match := re.search(r"#due=(\S+)\b", self.text):
+            due_timestamp = match.group(1)
+            try:
+                due_datetime = datetime.strptime(due_timestamp, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                logger.warning(f"Invalid Well due timestamp: {due_timestamp}")
+        return due_datetime
+
+    def get_well_sort_value(self) -> float:
+        """Wells have their child nodes in order of how long they have been due (so incomplete things at top)"""
+
+        due_seconds = 0
+
+        if due_datetime := self.get_well_current_due_datetime():
+            # if this value is positive, it means that note has resurfaced in the Well
+            due_seconds = (datetime.now() - due_datetime).total_seconds()
+
+        return due_seconds
+
+    def check_well_status(self) -> None:
+        if self.is_done() and self.get_well_sort_value() > 0:
+            self.toggle_done()
+
+
+def extended_parse(input_str: str) -> int | None:
+    """extend pytimeparse.parse to work with years and months"""
+    if not input_str:
+        return None
+    seconds = parse(input_str)
+    if seconds is not None:
+        return seconds
+    if input_str[-1] == "y":
+        try:
+            years = float(input_str[:-1])
+            days = years * 365
+            return parse(f"{days}d")
+        except:
+            return None
+    if input_str[-2:] == "mo":
+        try:
+            months = float(input_str[:-2])
+            days = months * 30
+            return parse(f"{days}d")
+        except:
+            return None
+    return None

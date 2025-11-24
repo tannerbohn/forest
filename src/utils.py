@@ -1,4 +1,6 @@
 import os
+import re
+from datetime import datetime
 
 MONTH_ORDER = [
     "January",
@@ -14,6 +16,21 @@ MONTH_ORDER = [
     "November",
     "December",
 ]
+
+
+def apply_input_substitutions(text: str) -> str:
+    if "{NOW}" in text:
+        now_str = datetime.now().strftime("[%Y-%m-%d %H:%M]")
+        text = re.sub(r"{NOW}", now_str, text)
+
+    return text
+
+
+def add_subtree(node, tree):
+    for k, v in tree.items():
+        child = node.add_child(k)
+        if v:
+            add_subtree(child, v)
 
 
 def determine_state_filename(filepath):

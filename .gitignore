@@ -1,3 +1,10 @@
+# personal
+experiments/
+log.txt
+trees/*
+!trees/intro.txt
+!trees/states/intro_state.txt
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

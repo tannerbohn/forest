@@ -1,0 +1,11 @@
+Text {
+    height: 1fr;
+    text-wrap: nowrap;
+    text-overflow: fold;
+}
+
+
+#tree2 {
+    text-overflow: fold;  # Overflowing text is folded on to the next line
+    background: green 20%;
+}

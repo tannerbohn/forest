@@ -1,12 +1,12 @@
-subtrees = {}
+SUBTREES = {}
 
-subtrees["NOTICE"] = {
+SUBTREES["NOTICE"] = {
     "What sounds do you remember?": None,
     "What was something interesting you touched?": None,
     "What was an interesting smallscape?": None,
 }
 
-subtrees["BRAINSTORM"] = {
+SUBTREES["BRAINSTORM"] = {
     "Understanding the problem": {
         "Why does this problem matter?/Why do we see it as a problem?": None,
         "Why does this problem exist?": None,
@@ -40,14 +40,14 @@ subtrees["BRAINSTORM"] = {
     "What is the smallest change that would make the largest difference?": None,
 }
 
-subtrees["VALUES"] = {
+SUBTREES["VALUES"] = {
     "Intense Focus": None,
     "Curiosity": None,
     "Oneness/Connection": None,
     "Optimism": None,
 }
 
-subtrees["DECIDING"] = {
+SUBTREES["DECIDING"] = {
     "What if everyone did this?": None,
     "What if you did this 100X as much?": None,
     "If this goes right...": {
@@ -70,6 +70,17 @@ subtrees["DECIDING"] = {
         "Black hat: Negatives. Consider any potential flaws, risks, challenges and fears.": None,
         "Green hat: Creativity. Consider abstract thinking, digressions, alternative proposals, and provocative statements.": None,
     },
+}
+
+SUBTREES["FLOW"] = {
+    "Reduce friction in the desired direction": None,
+    "Build momentum": None,
+    "Establish a 'sink' to create pull in that direction": None,
+    "Positive feedback loops": None,
+    "Channeling (e.g. set milestones to celebrare)": None,
+    "Potential energy (position yourself/team in a way to maximize potential)": None,
+    "Catalysts (find a key individual or resource to accelerate/spark movement in the desired direction)": None,
+    "Induction: manufacture flow in a nearby current to induce flow in the target one": None,
 }
 
 # morning mental battery:

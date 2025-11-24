@@ -1,28 +1,16 @@
 - What is Forest?
-	- Forest is a note-taking/brainstorming interface made with pycurses which is built around the idea of organizing notes into nested branches, and being able to zoom into branches
+	- Forest is a note-taking/brainstorming interface made with Textual which is built around the idea of organizing notes into nested branches, and being able to zoom into branches
 - Moving around
 	- up and down
 	- left (move up in the tree), right (move deeper into the tree -- useful if you want to focus on something)
-	- jumping to a random note anywhere in the current section of the tree: r
-	- to exit the forest, type Ctrl-C. Make sure you have saved any changes first!
+	- to exit the forest, type Ctrl-Q. Make sure you have saved any changes first!
 - Creating new notes
 	- press Enter below where you want the note
 	- while typing the note text, you can type Tab or Shift+Tab at the line start to indent or de-indent it
-	- If you have text in your clipboard, type Ctrl-v and it will be parsed into notes (split by lines) and inserted below the current note
-- Look! This branch is collapsed!
-	- It can have so many things inside
 - #Editing notes
-	- press a or backspace to edit a note. Press Enter when you're done editing. Or Esc to cancel your changes
+	- press e or backspace to edit a note. Press Enter when you're done editing. Or Esc to cancel your changes
 	- marking as complete: x (this will also dim the children of the node. Press x again to toggle status) #DONE
 	- indent and de-indent: tab and shift+tab
-	- to bookmark a note (like this one), type "!"
-		- to see existing bookmarks, type `. Hitting the same key will hide this window
-			- in the bottom of this window, whatever bookmark 0 is, will be displayed (good for things you need to refer to frequently)
-		- a maximum of 10 bookmarks are supported
-		- to jump to a bookmark, hit the number key associated with the bookmark (found with `)
-	- adding #hashtags
-		- When the hashtag occurs at the start of the note (like the parent note of this branch), the FIRST 3 WORDS are used as the hashtag
-		- When the hashtag occurs anywhere else, use dashes (-) in place of spaces. These are called "linking" hashtags
 	- to delete a note, press delete (currently no undo feature)
 	- to move a note up or down among its siblings, use u and d
 	- Highlighting notes by pressing "h". Press multiple times to cycle through the options
@@ -30,37 +18,23 @@
 		- or yellow #HL2
 		- or orange #HL3
 - Collapsing (press space on any note with children)
+	- Look! This branch is collapsed!
+		- It can have so many things inside
 - Command mode (enter command mode with :)
 	- searching for a note: :? <query>
 		- If a single ? is used, searching is done within the current context
 		- If ?? is used, searching is done through the whole tree
-	- finding hashtag matches: :< (to find the source) or :> (to find the linking notes)
-		- The < command will let you go to the "source" note. A hashtag source is a note that starts with a hashtag. For example, the source for #editing-notes is the "Editing notes" note
-		- The > command will let you cycle through the "linking" note.
-		- When cycling through matches, press Enter to choose where to stop
-- Copying and pasting notes
-	- press Ctrl+X on as many notes as you like (this will also add the note text to your clipboard)
-	- move to the location you want to put the notes, and press Ctrl-V
-	- if you want to cancel your copy action, press Esc
-- Saving changes (hit the s key, or :save)
+	- When cycling through matches, press Enter to choose where to stop
+	- to bookmark a note (like this one), use ":b"
+		- to see existing bookmarks, type `. Hitting the same key will hide this window
+		- a maximum of 10 bookmarks are supported
+		- to jump to a bookmark, hit the number key associated with the bookmark (found with `)
+- Saving changes (hit the s key)
+	- If you have unsaved changes, "Modified" will appear in the top bar
 - Using the journal
 	- to add a journal entry (a journal branch will automatically be created), use :j+ <entry>
 	- journal entries are automatically sorted into branches for the year and month
-- What's up with the blue strip on the left?
+- What's up with the white/blue strip on the left?
 	- This strip reflects the age of a note. New ones are bright blue, and as the get older, they will slowly fade
-- Expiring notes
-	- You can set a note (and all of it's children) to delete themselves after a certain duration
-		- Simply add "#T-1d" for example, to set the expiry to 1 day from now. Other examples: "#T-12h", "#T-4w", "#T-30s". Only s(econds), m(inutes), h(ours), d(ays), and w(eeks) are supported
-		- After specifying the expiry in this simplified format, it will be automatically replaced with the exact expiry time (e.g. "#T-2024-10-25T01:13:20"). You can edit this string to change the expiry
-	- When a note has an expiry, the blue strip on the left will instead be orange, becoming more vibrant as the expiry time approaches
-	- At the moment, deletion is only performed upon saving or file loading
-- Encrypting and decrypting
-	- to mark a branch as to-be-encrypted, add "# ENCRYPT" (without the space) in the root note of the branch
-		- upon saving, you may be prompted for an encryption key
-	- to decrypt a branch, use :decrypt. You will be prompted for a key if you haven't done so recently
-	- to generate your own encryption key, use `from cryptography.fernet import Fernet; Fernet.generate_key()`
-		- make sure you don't lose this
-- Colour Scheme
-	- To change the colour scheme, change the value in config.json to the name of an entry in colour_schemes.json
 - Executable notes
 	- if a note starts with "!", then you can execute the contents in a subprocess with :run

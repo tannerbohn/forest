@@ -1,3 +1,4 @@
 textual
-textwrap
 pytimeparse
+watchdog
+rich

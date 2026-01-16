@@ -624,7 +624,8 @@ class NoteTreeWidget(Tree):
                     age_char = "▎   "
                 age_days = line.path[-1]._node.get_days_old()
                 age_color = self.age_gradient.get_color(min(1, age_days / 365)).hex
-                age_segment = Segment(age_char, Style(color=age_color))
+                age_bg = self.app.get_theme_variable_defaults().get("age-column-bg", "#1f170d")
+                age_segment = Segment(age_char, Style(color=age_color, bgcolor=age_bg))
 
             segments = [age_segment] + list(guides.render(self.app.console))
             pad_width = max(self.virtual_size.width, width)

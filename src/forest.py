@@ -53,6 +53,7 @@ forest_theme = Theme(
         "age-color-0": "#ffffff",
         "age-color-1": "#00b3ff",
         "age-color-2": "#1f170d",
+        "age-column-bg": "#1f170d",
     },
 )
 
@@ -159,24 +160,30 @@ class InfoWidget(DataTable):
     mode_options = [None, "bookmarks", "perpetual_journal"]
 
     def cycle_mode(self):
+        old_index = self.mode_index
         self.mode_index = (self.mode_index + 1) % len(self.mode_options)
-        logging.info(f"Info mode: {self.mode_index}")
+        logging.info(f"cycle_mode: {old_index} -> {self.mode_index}, mode = {self.mode_options[self.mode_index]}")
         self.update_data()
 
     def update_data(self):
 
         mode = self.mode_options[self.mode_index]
+        logging.info(f"update_data: mode = {mode}")
         if mode is None:
+            logging.info("update_data: hiding widget")
             self.clear(columns=True)
             self.display = False
+            self.refresh()
             return
 
+        logging.info(f"update_data: showing widget, display = True")
         self.display = True
 
         width = min(self.app.size.width // 2, 60)
         # logging.info(f"Updating info widget with size: {self.size}")
 
         if mode == "bookmarks":
+            logging.info("update_data: building bookmarks table")
             self.show_header = False
 
             table_rows = [
@@ -193,8 +200,11 @@ class InfoWidget(DataTable):
             self.clear(columns=True)
             self.add_columns("", "")
             self.add_rows(table_rows)  # [1:])
+            logging.info(f"update_data: bookmarks table built with {len(table_rows)} rows, calling refresh()")
+            self.refresh()
 
         elif mode == "perpetual_journal":
+            logging.info("update_data: building perpetual_journal table")
             self.show_header = False
 
             # ON THIS DAY
@@ -249,6 +259,8 @@ class InfoWidget(DataTable):
             self.clear(columns=True)
             self.add_columns("", "")  # *table_rows[0])
             self.add_rows(table_rows)  # [1:])
+            logging.info(f"update_data: perpetual_journal table built with {len(table_rows)} rows, calling refresh()")
+            self.refresh()
 
 
 class MultiPurposeSuggester(Suggester):
@@ -281,7 +293,8 @@ class ForestApp(App):
     }
 
     #info-widget {
-        width: 50%;
+        width: 30%;
+        height: 100%;
         background-tint: $foreground 10%;
         display: none;
         layer: overlay;
@@ -402,6 +415,7 @@ class ForestApp(App):
         self.input_widget.border_title = "Edit note"
 
     def action_cycle_side_panel(self):
+        logging.info("action_cycle_side_panel called")
         self.info_widget.cycle_mode()
 
     def on_input_submitted(self, event):

@@ -67,11 +67,14 @@ class NoteTreeWidget(Tree):
         self.show_root = False
         self.auto_expand = False
 
-        # logging.info("FIRST RENDERING...")
         self.render()
-        # logging.info("DONE FIRST RENDERING")
         self.move_cursor_to_line(0)
-        # self.note_tree.update_context(self.cursor_node._node)
+
+    def get_first_widget_for_node(self, widget_node):
+        """Get the first widget of a multiline node, or the widget itself if single-line."""
+        if widget_node and hasattr(widget_node, "_first_widget_of_multiline"):
+            return widget_node._first_widget_of_multiline
+        return widget_node
 
     def set_styled_node_label(self, widget_node, is_cursor=False):
 
@@ -117,7 +120,9 @@ class NoteTreeWidget(Tree):
 
         # completion coloring
         if _node.is_done():
-            tag = self.app.get_theme_variable_defaults().get("dim-text") or "dim"
+            tag = (
+                self.app.get_theme_variable_defaults().get("dim-text") or "dim"
+            )
             text = f"[{tag}]{text}[/{tag}]"
 
         # highlighting
@@ -125,9 +130,14 @@ class NoteTreeWidget(Tree):
             hashtag = _node.get_highlight_hashtag()
             hl = None
             if "HL1" == hashtag:
-                hl = self.app.get_theme_variable_defaults().get("HL1") or "green"
+                hl = (
+                    self.app.get_theme_variable_defaults().get("HL1") or "green"
+                )
             elif "HL2" == hashtag:
-                hl = self.app.get_theme_variable_defaults().get("HL2") or "yellow"
+                hl = (
+                    self.app.get_theme_variable_defaults().get("HL2")
+                    or "yellow"
+                )
             elif "HL3" == hashtag:
                 hl = self.app.get_theme_variable_defaults().get("HL3") or "red"
             if hl:
@@ -148,14 +158,14 @@ class NoteTreeWidget(Tree):
         tree_widget._node = root_node
         tree_widget._depth = depth
 
-        for node in root_node.children:
-            if target_widget is not None and node != target_widget._node:
-                continue
+        # If we're doing a targeted rebuild, remove ALL children of the parent and rebuild them all
+        # This prevents phantom widgets from persisting in Textual's internal structures
+        if target_widget:
+            tree_widget.remove_children()
+            # Clear target_widget so we rebuild all siblings, not just the target
+            target_widget = None
 
-            insertion_index = None
-            if target_widget:
-                insertion_index = tree_widget.children.index(target_widget)
-                target_widget.remove()
+        for node in root_node.children:
 
             text = node.get_text()
 
@@ -163,7 +173,9 @@ class NoteTreeWidget(Tree):
 
             # 2 for arrow + space
             # 4 for age strip + space
-            available_width = self.app.size.width - (self.guide_depth * depth + 2 + 4)
+            available_width = self.app.size.width - (
+                self.guide_depth * depth + 2 + 4
+            )
 
             if node.is_collapsed:
                 text += " [•••]"
@@ -179,14 +191,14 @@ class NoteTreeWidget(Tree):
             )  # use a placeholder arrow here, will be replaced when we apply line formatting
 
             if len(parts) > 1:
-                child_widget = tree_widget.add(parts[0], before=insertion_index)
+                child_widget = tree_widget.add(parts[0])
                 child_widget._depth = depth + 1
                 child_widget._node = node
                 first_widget = child_widget
                 first_widget.expand()
 
                 for p in parts[1:]:
-                    child_widget = tree_widget.add("  " + p, before=insertion_index)
+                    child_widget = tree_widget.add("  " + p)
                     child_widget._node = node
                     child_widget._depth = depth + 1
                     child_widget._first_widget_of_multiline = first_widget
@@ -200,7 +212,7 @@ class NoteTreeWidget(Tree):
                 child_widget._last_widget_of_multiline = child_widget
 
             else:
-                child_widget = tree_widget.add(parts[0], before=insertion_index)
+                child_widget = tree_widget.add(parts[0])
                 child_widget._node = node
                 child_widget._depth = depth + 1
                 child_widget._first_widget_of_multiline = child_widget
@@ -266,14 +278,18 @@ class NoteTreeWidget(Tree):
             return
 
         self.cursor_node._node.cycle_highlight()
-        self.render(target_widget=self.cursor_node)
+        self.render(
+            target_widget=self.get_first_widget_for_node(self.cursor_node)
+        )
 
     def action_toggle_done(self):
         if not self.cursor_node:
             return
 
         self.cursor_node._node.toggle_done()
-        self.render(target_widget=self.cursor_node)
+        self.render(
+            target_widget=self.get_first_widget_for_node(self.cursor_node)
+        )
 
     def _fix_cursor_position(self, target_node):
         if not target_node:
@@ -325,17 +341,17 @@ class NoteTreeWidget(Tree):
         if not self.cursor_node:
             return
 
-        # logging.info(f"TOGGLING NODE: {self.cursor_node.label}")
         self.note_tree.update_wells()
         self.note_tree.toggle_collapse(self.cursor_node._node)
-        self.render(target_widget=self.cursor_node)
+        self.render(
+            target_widget=self.get_first_widget_for_node(self.cursor_node)
+        )
 
     def action_add_note(self):
 
         if not self.cursor_node:
             return
 
-        # logging.info(f"ADDING NOTE UNDER: {self.cursor_node._node.text[:20]}")
         _node = self.note_tree.contextual_add_new_note(self.cursor_node._node)
         self.render()
 
@@ -355,17 +371,8 @@ class NoteTreeWidget(Tree):
             self.render(target_widget=self.cursor_node.parent)
             self._fix_cursor_position(_node)
 
-    # def action_move_node_down(self):
-    #     if self.cursor_node and hasattr(self.cursor_node, "_node") and self.cursor_node._node:
-    #         _node = self.cursor_node._node
-    #         self.note_tree.move_line(self.cursor_node._node, direction="down")
-    #         self.render()
-    #         self._fix_cursor_position(self.cursor_node._node)
-
     def on_resize(self, event) -> None:
         new_size = event.size
-        # logging.info(f"Window resized to: {new_size.width} x {new_size.height}")
-        # self.refresh()
         self.render()
 
     def action_zoom_in(self):
@@ -408,16 +415,17 @@ class NoteTreeWidget(Tree):
             self.move_cursor_to_line(0)
         else:
             if self.note_tree.context_node.depth > 0:
-                _node = self.note_tree.context_node  # self.cursor_node._node.parent
-                self.note_tree.update_context(self.note_tree.context_node.parent)
+                _node = (
+                    self.note_tree.context_node
+                )  # self.cursor_node._node.parent
+                self.note_tree.update_context(
+                    self.note_tree.context_node.parent
+                )
                 self.render()
 
                 self._fix_cursor_position(_node)
 
     def action_cursor_down(self):
-        # logging.info(f"CURSOR DOWN: {self.cursor_line}")
-        # if self.cursor_line == -1:
-        #     return
         if not self.note_tree.context_node.children:
             return
 
@@ -430,13 +438,12 @@ class NoteTreeWidget(Tree):
 
             if (
                 self.cursor_node.label.plain.strip()
-                and self.cursor_node._first_widget_of_multiline == self.cursor_node
+                and self.cursor_node._first_widget_of_multiline
+                == self.cursor_node
             ):
                 break
 
     def action_cursor_up(self):
-        # logging.info(f"CURSOR UP: {self.cursor_line}")
-
         if not self.note_tree.context_node.children:
             return
 
@@ -452,7 +459,8 @@ class NoteTreeWidget(Tree):
 
             if (
                 self.cursor_node.label.plain.strip()
-                and self.cursor_node._first_widget_of_multiline == self.cursor_node
+                and self.cursor_node._first_widget_of_multiline
+                == self.cursor_node
             ):
                 break
 
@@ -463,25 +471,27 @@ class NoteTreeWidget(Tree):
 
     def add_journal_entry(self, text):
         new_node = self.note_tree.add_journal_entry(text)
-        self.note_tree.context_node = new_node.parent  # self.cursor_node._node.parent
+        self.note_tree.context_node = (
+            new_node.parent
+        )  # self.cursor_node._node.parent
         self.move_cursor_to_line(0)
-        # current_node = self.cursor_node._node
         self.render()
 
     def visit_bookmark(self, bookmark_index: int):
 
         _node = self.note_tree.jump_to_bookmark(bookmark_index)
         if _node:
+            self.move_cursor_to_line(0)
             self.render()
-
-            self._fix_cursor_position(_node)
 
     def toggle_bookmark(self):
         if not self.cursor_node:
             return
         _node = self.cursor_node._node
         self.note_tree.toggle_bookmark(_node)
-        self.render(target_widget=self.cursor_node)
+        self.render(
+            target_widget=self.get_first_widget_for_node(self.cursor_node)
+        )
 
     def add_subtree(self, subtree_name: str):
         if not self.cursor_node or not self.cursor_node._node:
@@ -492,7 +502,9 @@ class NoteTreeWidget(Tree):
 
             self.render()
 
-    def _render_line(self, y: int, x1: int, x2: int, base_style: Style) -> Strip:
+    def _render_line(
+        self, y: int, x1: int, x2: int, base_style: Style
+    ) -> Strip:
         tree_lines = self._tree_lines
         width = self.size.width
 
@@ -501,7 +513,9 @@ class NoteTreeWidget(Tree):
 
         line = tree_lines[y]
 
-        is_hover = self.hover_line >= 0 and any(node._hover for node in line.path)
+        is_hover = self.hover_line >= 0 and any(
+            node._hover for node in line.path
+        )
 
         cache_key = (
             y,
@@ -516,7 +530,9 @@ class NoteTreeWidget(Tree):
         else:
             # Allow tree guides to be explicitly disabled by setting color to transparent
             base_hidden = self.get_component_styles("tree--guides").color.a == 0
-            hover_hidden = self.get_component_styles("tree--guides-hover").color.a == 0
+            hover_hidden = (
+                self.get_component_styles("tree--guides-hover").color.a == 0
+            )
             selected_hidden = (
                 self.get_component_styles("tree--guides-selected").color.a == 0
             )
@@ -524,17 +540,25 @@ class NoteTreeWidget(Tree):
             base_guide_style = self.get_component_rich_style(
                 "tree--guides", partial=True
             )
-            guide_hover_style = base_guide_style + self.get_component_rich_style(
-                "tree--guides-hover", partial=True
+            guide_hover_style = (
+                base_guide_style
+                + self.get_component_rich_style(
+                    "tree--guides-hover", partial=True
+                )
             )
-            guide_selected_style = base_guide_style + self.get_component_rich_style(
-                "tree--guides-selected", partial=True
+            guide_selected_style = (
+                base_guide_style
+                + self.get_component_rich_style(
+                    "tree--guides-selected", partial=True
+                )
             )
 
             hover = line.path[0]._hover
             selected = line.path[0]._selected and self.has_focus
 
-            def get_guides(style: Style, hidden: bool) -> tuple[str, str, str, str]:
+            def get_guides(
+                style: Style, hidden: bool
+            ) -> tuple[str, str, str, str]:
                 """Get the guide strings for a given style.
 
                 Args:
@@ -544,7 +568,9 @@ class NoteTreeWidget(Tree):
                 Returns:
                     Strings for space, vertical, terminator and cross.
                 """
-                lines: tuple[Iterable[str], Iterable[str], Iterable[str], Iterable[str]]
+                lines: tuple[
+                    Iterable[str], Iterable[str], Iterable[str], Iterable[str]
+                ]
                 if self.show_guides and not hidden:
                     lines = self.LINES["default"]
                     if style.bold:
@@ -562,7 +588,9 @@ class NoteTreeWidget(Tree):
                 return cast("tuple[str, str, str, str]", guide_lines)
 
             if is_hover:
-                line_style = self.get_component_rich_style("tree--highlight-line")
+                line_style = self.get_component_rich_style(
+                    "tree--highlight-line"
+                )
             else:
                 line_style = base_style
 
@@ -597,7 +625,9 @@ class NoteTreeWidget(Tree):
                 else:
                     guides.append(cross, style=guide_style)
 
-            label_style = self.get_component_rich_style("tree--label", partial=True)
+            label_style = self.get_component_rich_style(
+                "tree--label", partial=True
+            )
             if self.hover_line == y:
                 label_style += self.get_component_rich_style(
                     "tree--highlight", partial=True
@@ -607,7 +637,9 @@ class NoteTreeWidget(Tree):
             #         "tree--cursor", partial=False
             #     )
 
-            label = self.render_label(line.path[-1], line_style, label_style).copy()
+            label = self.render_label(
+                line.path[-1], line_style, label_style
+            ).copy()
             label.stylize(Style(meta={"node": line.node._id}))
             guides.append(label)
 
@@ -623,13 +655,21 @@ class NoteTreeWidget(Tree):
                 else:
                     age_char = "▎   "
                 age_days = line.path[-1]._node.get_days_old()
-                age_color = self.age_gradient.get_color(min(1, age_days / 365)).hex
-                age_bg = self.app.get_theme_variable_defaults().get("age-column-bg", "#1f170d")
-                age_segment = Segment(age_char, Style(color=age_color, bgcolor=age_bg))
+                age_color = self.age_gradient.get_color(
+                    min(1, age_days / 365)
+                ).hex
+                age_bg = self.app.get_theme_variable_defaults().get(
+                    "age-column-bg", "#1f170d"
+                )
+                age_segment = Segment(
+                    age_char, Style(color=age_color, bgcolor=age_bg)
+                )
 
             segments = [age_segment] + list(guides.render(self.app.console))
             pad_width = max(self.virtual_size.width, width)
-            segments = line_pad(segments, 0, pad_width - guides.cell_len, line_style)
+            segments = line_pad(
+                segments, 0, pad_width - guides.cell_len, line_style
+            )
 
             strip = self._line_cache[cache_key] = Strip(segments)
 
@@ -645,8 +685,6 @@ class NoteTreeWidget(Tree):
 
         if node and node.label:
             self.set_styled_node_label(node, is_cursor=True)
-
-        # self.app.progress_bar.update(total=self.last_line, progress=line)
 
         if not node or not hasattr(node, "_node") or not node._node:
             self.app.status_bar.progress = (0, 0)

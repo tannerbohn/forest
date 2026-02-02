@@ -124,7 +124,11 @@ class Node:
 
         path_str = " ▶ ".join(
             [
-                p if len(p) < max_part_length else p[: int(max_part_length) - 3] + "..."
+                (
+                    p
+                    if len(p) < max_part_length
+                    else p[: int(max_part_length) - 3] + "..."
+                )
                 for p in parts
             ]
         )
@@ -189,7 +193,9 @@ class Node:
                         )
                         words.remove(w)
                         words.append(
-                            self.expiry_datetime.strftime("#T-%Y-%m-%dT%H:%M:%S")
+                            self.expiry_datetime.strftime(
+                                "#T-%Y-%m-%dT%H:%M:%S"
+                            )
                         )
                         self.text = " ".join(words)
                     break
@@ -210,7 +216,9 @@ class Node:
                 words = [w for w in words if not w.startswith("#due")]
                 due_datetime = self.get_well_next_due_datetime()
                 if due_datetime:
-                    words.append(f"#due={due_datetime.strftime('%Y-%m-%dT%H:%M:%S')}")
+                    words.append(
+                        f"#due={due_datetime.strftime('%Y-%m-%dT%H:%M:%S')}"
+                    )
 
             # look through value dict for anything to increment or decrement
             for k, v in self.value_dict.items():
@@ -220,7 +228,9 @@ class Node:
                 elif k.endswith("_dec"):
                     delta = -1
                 if delta:
-                    old_word = [w for w in words if w.lower().startswith("$" + k)][0]
+                    old_word = [
+                        w for w in words if w.lower().startswith("$" + k)
+                    ][0]
                     words[words.index(old_word)] = f"${k}={v+delta}"
 
             self.text = " ".join(words)
@@ -286,7 +296,9 @@ class Node:
     def get_days_old(self, recurse=False):
         days = (datetime.now() - self.creation_time).days
         if self.is_collapsed or recurse:
-            return min([days] + [c.get_days_old(recurse=True) for c in self.children])
+            return min(
+                [days] + [c.get_days_old(recurse=True) for c in self.children]
+            )
         else:
             return days
 
@@ -325,7 +337,10 @@ class Node:
         if "avg" in hashtags:
             if branch_values := self.get_branch_values():
                 values_str = "|".join(
-                    [f"avg({k})={sum(v)/len(v)}" for k, v in branch_values.items()]
+                    [
+                        f"avg({k})={sum(v)/len(v)}"
+                        for k, v in branch_values.items()
+                    ]
                 )
                 text += f" ({values_str})"
 
@@ -432,7 +447,9 @@ class Node:
         self.update_child_depth()
         parent.children.remove(self)
         self.parent = grandparent
-        grandparent.children.insert(grandparent.children.index(parent) + 1, self)
+        grandparent.children.insert(
+            grandparent.children.index(parent) + 1, self
+        )
 
     def move_deeper(self):
         parent = self.parent
@@ -537,7 +554,9 @@ class Node:
         if match := re.search(r"#due=(\S+)\b", self.text):
             due_timestamp = match.group(1)
             try:
-                due_datetime = datetime.strptime(due_timestamp, "%Y-%m-%dT%H:%M:%S")
+                due_datetime = datetime.strptime(
+                    due_timestamp, "%Y-%m-%dT%H:%M:%S"
+                )
             except ValueError:
                 logger.warning(f"Invalid Well due timestamp: {due_timestamp}")
         return due_datetime

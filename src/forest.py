@@ -15,8 +15,15 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.suggester import Suggester, SuggestFromList
 from textual.theme import Theme
-from textual.widgets import (DataTable, Footer, Input, Markdown, ProgressBar,
-                             Static, Tree)
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Input,
+    Markdown,
+    ProgressBar,
+    Static,
+    Tree,
+)
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -28,34 +35,83 @@ from utils import apply_input_substitutions, determine_state_filename
 
 forest_theme = Theme(
     name="forest",
-    primary="#4a3a26",  # background of selected line
-    secondary="orange",
-    accent="yellow",
+    primary="#4a3a26",  # background of mouse-overed line
+    # secondary="orange",  # unused
+    # accent="yellow",  # unused
     foreground="#c9b597",  # default text
     background="#1f170d",  # shows up in scroll bar and behind help menu
-    # success="#A3BE8C",
-    # warning="#EBCB8B",
-    # error="#BF616A",
-    surface="#1f170d",  #  # background
+    surface="#1f170d",  # main background
     panel="#4a3a26",  # header and footer background
-    dark=True,
+    # dark=True,
     variables={
-        "block-cursor-text-style": "none",
-        "block-cursor-blurred-text-style": "none",
-        "footer-key-foreground": "white",
-        "input-selection-background": "white 35%",
-        "dim-text": "#746652",
-        "HL1": "#00b3ff",
-        "HL2": "#d6a800",
-        "HL3": "#ff4d00",
-        "cursor-arrow": "white",
+        "block-cursor-text-style": "none",  # unused?
+        "block-cursor-blurred-text-style": "none",  # unused?
+        "footer-key-foreground": "white",  # unused
+        "input-selection-background": "white 15%",
+        "dim-text": "#746652",  # when a note is marked complete
+        "HL1": "#00b3ff",  # first highlight text color (and line count in top bar)
+        "HL2": "#d6a800",  # second highlight text color
+        "HL3": "#ff4d00",  # third highlight text color
+        "cursor-arrow": "white",  # current-line indicator triagle
         "default-arrow": "#106586",  # half way between HL1 and background
-        "age-color-0": "#ffffff",
+        "age-color-0": "#ffffff",  # far-left indicator strip color for new notes
         "age-color-1": "#00b3ff",
         "age-color-2": "#1f170d",
-        "age-column-bg": "#1f170d",
+        "age-column-bg": "#1f170d",  # indicator strip color for oldest notes
     },
 )
+
+# "Verve" color palette
+# forest_theme = Theme(
+#     name="forest",
+#     primary="#4d2b5e",  # Rich plum; provides a deep but "living" foundation
+#     foreground="#e0def4",  # Soft lavender-white; reduces eye strain while maintaining the cool tone
+#     background="#191724",  # Desaturated midnight; provides high contrast for neon accents
+#     surface="#191724",     # Consistent deep backdrop
+#     panel="#26233a",       # Slightly lighter indigo for structural distinction
+#     variables={
+#         "block-cursor-text-style": "none",
+#         "block-cursor-blurred-text-style": "none",
+#         "footer-key-foreground": "#eb6f92",  # Punchy rose accent
+#         "input-selection-background": "white 20%",
+#         "dim-text": "#6e6a86",  # Muted slate for completed tasks
+#         "HL1": "#9ccfd8",  # Ethereal foam green (Creative Spark 1)
+#         "HL2": "#f6c177",  # Saffron/Gold (Creative Spark 2)
+#         "HL3": "#eb6f92",  # Energetic Rose (Creative Spark 3)
+#         "cursor-arrow": "#c4a7e7",  # Bright lilac indicator
+#         "default-arrow": "#56526e",  # Low-profile bridge between primary and background
+#         "age-color-0": "#ebbcba",  # Soft coral for new notes
+#         "age-color-1": "#31748f",  # Deep pine for mid-age
+#         "age-color-2": "#191724",  # Matching background for oldest notes
+#         "age-column-bg": "#191724",
+#     },
+# )
+
+# "Deep Forest"
+# forest_theme = Theme(
+#     name="forest",
+#     primary="#4a3423",  # Deep Mahogany; a warm, saturated brown for the active line
+#     foreground="#e6d5bc",  # Toasted Parchment; removes the "blue" tint for a warmer read
+#     background="#1a120b",  # Clove; a very dark, warm-toned brown that replaces the "icy" black
+#     surface="#1a120b",     # Consistent warm foundation
+#     panel="#261a10",       # Roasted Coffee; slightly lighter/warmer than the background
+#     variables={
+#         "block-cursor-text-style": "none",
+#         "block-cursor-blurred-text-style": "none",
+#         "footer-key-foreground": "#d6a800",  # Shifted to gold to maintain the warmth
+#         "input-selection-background": "rgba(214, 168, 0, 0.2)",
+#         "dim-text": "#635243",  # Driftwood; a warm gray for completed notes
+#         "HL1": "#00b3ff",  # Your signature Bright Blue (The "Luminous Signal")
+#         "HL2": "#ff9500",  # Amber; shifted from yellow to a more "fiery" orange-gold
+#         "HL3": "#e65555",  # Soft Crimson; a warm, autumnal red for contrast
+#         "cursor-arrow": "#ffffff",
+#         "default-arrow": "#106586",
+#         "age-color-0": "#fff4e6",  # "Candlelight" white for new notes
+#         "age-color-1": "#00b3ff",
+#         "age-color-2": "#1a120b",
+#         "age-column-bg": "#1a120b",
+#     },
+# )
 
 LOG_FILE = "log.txt"
 
@@ -117,7 +173,9 @@ class StatusBar(Static):
             )
             remaining_width = self.size.width - len(text.plain) - 1
 
-            context_path = self.context_node.get_path_string(width=remaining_width)
+            context_path = self.context_node.get_path_string(
+                width=remaining_width
+            )
 
             text = text + Text.from_markup(context_path)
         else:
@@ -126,11 +184,17 @@ class StatusBar(Static):
             end_text = needs_saving_text + progress_text
 
             remaining_width = max(
-                0, self.size.width - len(start_text.plain) - len(end_text.plain) - 1
+                0,
+                self.size.width
+                - len(start_text.plain)
+                - len(end_text.plain)
+                - 1,
             )
             path_text = ""
             if self.context_node:
-                path_text = self.context_node.get_path_string(width=remaining_width)
+                path_text = self.context_node.get_path_string(
+                    width=remaining_width
+                )
             path_text += " " * max(0, remaining_width - len(path_text))
             text = start_text + Text.from_markup(path_text) + end_text
 
@@ -162,7 +226,9 @@ class InfoWidget(DataTable):
     def cycle_mode(self):
         old_index = self.mode_index
         self.mode_index = (self.mode_index + 1) % len(self.mode_options)
-        logging.info(f"cycle_mode: {old_index} -> {self.mode_index}, mode = {self.mode_options[self.mode_index]}")
+        logging.info(
+            f"cycle_mode: {old_index} -> {self.mode_index}, mode = {self.mode_options[self.mode_index]}"
+        )
         self.update_data()
 
     def update_data(self):
@@ -200,7 +266,9 @@ class InfoWidget(DataTable):
             self.clear(columns=True)
             self.add_columns("", "")
             self.add_rows(table_rows)  # [1:])
-            logging.info(f"update_data: bookmarks table built with {len(table_rows)} rows, calling refresh()")
+            logging.info(
+                f"update_data: bookmarks table built with {len(table_rows)} rows, calling refresh()"
+            )
             self.refresh()
 
         elif mode == "perpetual_journal":
@@ -244,7 +312,10 @@ class InfoWidget(DataTable):
             table_rows.extend(
                 [
                     ["", ""],
-                    ["", Text.from_markup("[white][b]In This Month[/b][/white]")],
+                    [
+                        "",
+                        Text.from_markup("[white][b]In This Month[/b][/white]"),
+                    ],
                     ["", ""],
                     ["Date", "Entry"],
                 ]
@@ -259,7 +330,9 @@ class InfoWidget(DataTable):
             self.clear(columns=True)
             self.add_columns("", "")  # *table_rows[0])
             self.add_rows(table_rows)  # [1:])
-            logging.info(f"update_data: perpetual_journal table built with {len(table_rows)} rows, calling refresh()")
+            logging.info(
+                f"update_data: perpetual_journal table built with {len(table_rows)} rows, calling refresh()"
+            )
             self.refresh()
 
 
@@ -267,6 +340,11 @@ class MultiPurposeSuggester(Suggester):
 
     async def get_suggestion(self, value: None | str) -> None | str:
 
+        # Show available commands when input is empty
+        if not value:
+            return "[b]ookmark | run | insert | j+ | ? | ??"
+
+        # Show subtree options when user types "insert "
         if value == "insert ":
             subtree_names = " | ".join(SUBTREES)
             return "insert " + subtree_names
@@ -324,7 +402,9 @@ class ForestApp(App):
     BINDINGS = [
         Binding("e,backspace", "edit_note()", "Edit note", show=True),
         Binding(":", "command_mode()", "Command mode", show=True),
-        Binding("grave_accent", "cycle_side_panel()", "Cycle side panel", show=True),
+        Binding(
+            "grave_accent", "cycle_side_panel()", "Cycle side panel", show=True
+        ),
     ]
 
     def __init__(self, file_path: str):
@@ -357,10 +437,14 @@ class ForestApp(App):
         self.status_bar = StatusBar(id="status-bar")
         yield self.status_bar
 
-        self.input_widget = Input(id="input-box", suggester=MultiPurposeSuggester())
+        self.input_widget = Input(
+            id="input-box", suggester=MultiPurposeSuggester()
+        )
         yield self.input_widget
 
-        self.note_tree_widget = NoteTreeWidget(note_tree=self.note_tree, id="note-tree")
+        self.note_tree_widget = NoteTreeWidget(
+            note_tree=self.note_tree, id="note-tree"
+        )
         self.note_tree_widget.focus()
         # self.note_tree_widget.move_cursor_to_line(0)
 
@@ -390,7 +474,9 @@ class ForestApp(App):
             len(self._search_matches),
         )
 
-        self.note_tree_widget.update_location(context_node=node.parent, line_node=node)
+        self.note_tree_widget.update_location(
+            context_node=node.parent, line_node=node
+        )
 
     def action_edit_note(self):
         # if the input widget already in use, stop
@@ -411,6 +497,7 @@ class ForestApp(App):
         # input_widget.id = f"input-{id(node)}"
         self.input_widget.display = True
         self.input_widget.value = label_text
+        self.input_widget.placeholder = ""
         self.input_widget.focus()
         self.input_widget.border_title = "Edit note"
 
@@ -425,7 +512,9 @@ class ForestApp(App):
             if new_text:
                 new_text = apply_input_substitutions(new_text)
 
-                self._node_being_edited._node.text = new_text  # set_label(new_label)
+                self._node_being_edited._node.text = (
+                    new_text  # set_label(new_label)
+                )
                 self._node_being_edited._node.post_text_update()
                 self.note_tree.has_unsaved_operations = True
                 self._node_being_edited = None
@@ -465,7 +554,10 @@ class ForestApp(App):
                         self.note_tree_widget.cursor_node._node,
                     )
                 except AttributeError:
-                    self._pre_search_position = (self.note_tree.context_node, None)
+                    self._pre_search_position = (
+                        self.note_tree.context_node,
+                        None,
+                    )
                 self.update_search_view()
 
             elif cmd_str in ["b", "bookmark"]:
@@ -493,6 +585,7 @@ class ForestApp(App):
 
         self.input_widget.display = True
         self.input_widget.value = ""
+        self.input_widget.placeholder = "bookmark | run | insert | j+ | ? | ??"
         self.input_widget.focus()
         self.input_widget.border_title = None  # "Command mode"
 

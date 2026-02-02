@@ -8,12 +8,15 @@ from datetime import datetime
 
 # from encryption_manager import encryption_manager
 from node import Node
-from utils import (MONTH_ORDER, convert_to_nested_list,
-                   determine_state_filename, normalize_indentation,
-                   trigram_similarity)
+from utils import (
+    MONTH_ORDER,
+    convert_to_nested_list,
+    determine_state_filename,
+    normalize_indentation,
+    trigram_similarity,
+)
 
 # import pyclip
-
 
 
 class NoteTree:
@@ -83,13 +86,16 @@ class NoteTree:
                         if isinstance(prop, str) and re.match(
                             r"\d{4}-\d{2}-\d{2}", prop
                         ):
-                            creation_time_map[key] = datetime.strptime(prop, "%Y-%m-%d")
+                            creation_time_map[key] = datetime.strptime(
+                                prop, "%Y-%m-%d"
+                            )
                             continue
 
                         # TODO: improve the matching process?
                         if not matching_node:
                             for i in range(
-                                max(index - 15, 0), min(index + 15, len(node_list))
+                                max(index - 15, 0),
+                                min(index + 15, len(node_list)),
                             ):
                                 node = node_list[i]
                                 if (
@@ -103,7 +109,9 @@ class NoteTree:
                                 matching_node.is_collapsed = True
                             elif prop == "context":
                                 context_node = matching_node
-                            elif isinstance(prop, list) and prop[0] == "bookmark":
+                            elif (
+                                isinstance(prop, list) and prop[0] == "bookmark"
+                            ):
                                 self.bookmarks[prop[1]] = matching_node
                                 self.bookmark_last_use_times[prop[1]] = (
                                     datetime.fromtimestamp(prop[2])
@@ -115,7 +123,9 @@ class NoteTree:
 
         self.has_unsaved_operations = False
         self.context_node = context_node or self.root
-        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.visible_node_list = self.context_node.get_node_list(
+            only_visible=True
+        )
 
     def save(self):
         # apply encryption where needed
@@ -146,7 +156,9 @@ class NoteTree:
                 if node in self.bookmarks.values():
                     for k, _node in self.bookmarks.items():
                         if node == _node:
-                            last_use_time = self.bookmark_last_use_times[k].timestamp()
+                            last_use_time = self.bookmark_last_use_times[
+                                k
+                            ].timestamp()
                             properties.append(("bookmark", k, last_use_time))
                             break
 
@@ -163,7 +175,9 @@ class NoteTree:
     def toggle_collapse(self, node: None):
         if node.children:
             node.toggle_collapse()
-            self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+            self.visible_node_list = self.context_node.get_node_list(
+                only_visible=True
+            )
             # self.has_unsaved_operations = True
 
     def ensure_journal_existence(self):
@@ -205,7 +219,9 @@ class NoteTree:
             # self.focus_index += 1
             new_node.text = "NEW NODE"  # start_edit_mode()
             self.index_nodes()
-            self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+            self.visible_node_list = self.context_node.get_node_list(
+                only_visible=True
+            )
             self.has_unsaved_operations = True
 
             return new_node
@@ -221,7 +237,9 @@ class NoteTree:
             node.parent.children.insert(index + 1, n)
             self.has_unsaved_operations = True
 
-        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.visible_node_list = self.context_node.get_node_list(
+            only_visible=True
+        )
 
     def deindent(self, focus_node, count=1):
         for _ in range(count):
@@ -233,14 +251,18 @@ class NoteTree:
                 self.index_nodes()
                 self.has_unsaved_operations = True
 
-        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.visible_node_list = self.context_node.get_node_list(
+            only_visible=True
+        )
 
     def indent(self, focus_node, count=1):
         for _ in range(count):
             focus_node.move_deeper()
             self.index_nodes()
         self.has_unsaved_operations = True
-        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.visible_node_list = self.context_node.get_node_list(
+            only_visible=True
+        )
 
     def delete_focus_node(self, focus_node):
         # TODO: what if we accidentally delete the context node?
@@ -250,7 +272,9 @@ class NoteTree:
             focus_node.delete_single()
         self.index_nodes()
         self.has_unsaved_operations = True
-        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.visible_node_list = self.context_node.get_node_list(
+            only_visible=True
+        )
 
     def add_journal_entry(self, entry):
         self.ensure_journal_existence()
@@ -273,7 +297,9 @@ class NoteTree:
         years = [c.text.split()[0] for c in self.journal.children]
         if not year in years:
             year_node = self.journal.add_child(year)
-            self.journal.children = sorted(self.journal.children, key=lambda c: c.text)
+            self.journal.children = sorted(
+                self.journal.children, key=lambda c: c.text
+            )
         else:
             year_node = self.journal.children[years.index(year)]
 
@@ -281,7 +307,8 @@ class NoteTree:
         if not month in months:
             month_node = year_node.add_child(month)
             year_node.children = sorted(
-                year_node.children, key=lambda c: MONTH_ORDER.index(c.text.split()[0])
+                year_node.children,
+                key=lambda c: MONTH_ORDER.index(c.text.split()[0]),
             )
         else:
             month_node = year_node.children[months.index(month)]
@@ -291,7 +318,9 @@ class NoteTree:
         new_node = month_node.add_child(entry)
 
         self.index_nodes()
-        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.visible_node_list = self.context_node.get_node_list(
+            only_visible=True
+        )
 
         self.has_unsaved_operations = True
 
@@ -301,7 +330,9 @@ class NoteTree:
         self.context_node = node
         if expand:
             self.context_node.is_collapsed = False
-        self.visible_node_list = self.context_node.get_node_list(only_visible=True)
+        self.visible_node_list = self.context_node.get_node_list(
+            only_visible=True
+        )
 
         # self.has_unsaved_operations = True
 
@@ -311,7 +342,11 @@ class NoteTree:
             focus_node = self.bookmarks[index]
             self.bookmark_last_use_times[index] = datetime.now()
 
-            if focus_node.parent:
+            # if focus_node.parent:
+            #     self.update_context(focus_node.parent, expand=True)
+            # else:
+            #     self.update_context(focus_node, expand=True)
+            if not focus_node.children:
                 self.update_context(focus_node.parent, expand=True)
             else:
                 self.update_context(focus_node, expand=True)
@@ -356,8 +391,12 @@ class NoteTree:
         matching_nodes = []
 
         for n in node_list:
-            text = n.text.replace("-", " ").lower()  # remove dashes due to hashtags
-            score = trigram_similarity(text, query.lower(), coverage_weight=0.75)
+            text = n.text.replace(
+                "-", " "
+            ).lower()  # remove dashes due to hashtags
+            score = trigram_similarity(
+                text, query.lower(), coverage_weight=0.75
+            )
             if score:
                 matching_nodes.append((n, score))
 
@@ -367,7 +406,9 @@ class NoteTree:
             return []
         else:
             top_score = matching_nodes[0][1]
-            matching_nodes = [n for n, s in matching_nodes if s >= top_score * 0.75]
+            matching_nodes = [
+                n for n, s in matching_nodes if s >= top_score * 0.75
+            ]
 
         return matching_nodes
 

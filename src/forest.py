@@ -4,7 +4,6 @@ import logging
 import os
 import re
 import textwrap
-import time
 from datetime import datetime
 
 from rich.text import Text
@@ -15,192 +14,108 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.suggester import Suggester, SuggestFromList
 from textual.theme import Theme
-from textual.widgets import (
-    DataTable,
-    Footer,
-    Input,
-    Markdown,
-    ProgressBar,
-    Static,
-    Tree,
-)
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
+from textual.widgets import (DataTable, Footer, Input, Markdown, ProgressBar,
+                             Static, Tree)
 
+from config import Config
 from node import Node
 from note_tree import NoteTree
 from note_tree_widget import NoteTreeWidget
 from subtrees import SUBTREES
-from utils import apply_input_substitutions, determine_state_filename
+from themes import THEMES
+from timer import Timer
+from utils import (apply_input_substitutions, compose_clock_notify_contents,
+                   determine_state_filename, play_sound_effect)
 
-forest_theme = Theme(
-    name="forest",
-    primary="#4a3a26",  # background of mouse-overed line
-    # secondary="orange",  # unused
-    # accent="yellow",  # unused
-    foreground="#c9b597",  # default text
-    background="#1f170d",  # shows up in scroll bar and behind help menu
-    surface="#1f170d",  # main background
-    panel="#4a3a26",  # header and footer background
-    # dark=True,
-    variables={
-        "block-cursor-text-style": "none",  # unused?
-        "block-cursor-blurred-text-style": "none",  # unused?
-        "footer-key-foreground": "white",  # unused
-        "input-selection-background": "white 15%",
-        "dim-text": "#746652",  # when a note is marked complete
-        "HL1": "#00b3ff",  # first highlight text color (and line count in top bar)
-        "HL2": "#d6a800",  # second highlight text color
-        "HL3": "#ff4d00",  # third highlight text color
-        "cursor-arrow": "white",  # current-line indicator triagle
-        "default-arrow": "#106586",  # half way between HL1 and background
-        "age-color-0": "#ffffff",  # far-left indicator strip color for new notes
-        "age-color-1": "#00b3ff",
-        "age-color-2": "#1f170d",
-        "age-column-bg": "#1f170d",  # indicator strip color for oldest notes
-    },
-)
-
-# "Verve" color palette
-# forest_theme = Theme(
-#     name="forest",
-#     primary="#4d2b5e",  # Rich plum; provides a deep but "living" foundation
-#     foreground="#e0def4",  # Soft lavender-white; reduces eye strain while maintaining the cool tone
-#     background="#191724",  # Desaturated midnight; provides high contrast for neon accents
-#     surface="#191724",     # Consistent deep backdrop
-#     panel="#26233a",       # Slightly lighter indigo for structural distinction
-#     variables={
-#         "block-cursor-text-style": "none",
-#         "block-cursor-blurred-text-style": "none",
-#         "footer-key-foreground": "#eb6f92",  # Punchy rose accent
-#         "input-selection-background": "white 20%",
-#         "dim-text": "#6e6a86",  # Muted slate for completed tasks
-#         "HL1": "#9ccfd8",  # Ethereal foam green (Creative Spark 1)
-#         "HL2": "#f6c177",  # Saffron/Gold (Creative Spark 2)
-#         "HL3": "#eb6f92",  # Energetic Rose (Creative Spark 3)
-#         "cursor-arrow": "#c4a7e7",  # Bright lilac indicator
-#         "default-arrow": "#56526e",  # Low-profile bridge between primary and background
-#         "age-color-0": "#ebbcba",  # Soft coral for new notes
-#         "age-color-1": "#31748f",  # Deep pine for mid-age
-#         "age-color-2": "#191724",  # Matching background for oldest notes
-#         "age-column-bg": "#191724",
-#     },
-# )
-
-# "Deep Forest"
-# forest_theme = Theme(
-#     name="forest",
-#     primary="#4a3423",  # Deep Mahogany; a warm, saturated brown for the active line
-#     foreground="#e6d5bc",  # Toasted Parchment; removes the "blue" tint for a warmer read
-#     background="#1a120b",  # Clove; a very dark, warm-toned brown that replaces the "icy" black
-#     surface="#1a120b",     # Consistent warm foundation
-#     panel="#261a10",       # Roasted Coffee; slightly lighter/warmer than the background
-#     variables={
-#         "block-cursor-text-style": "none",
-#         "block-cursor-blurred-text-style": "none",
-#         "footer-key-foreground": "#d6a800",  # Shifted to gold to maintain the warmth
-#         "input-selection-background": "rgba(214, 168, 0, 0.2)",
-#         "dim-text": "#635243",  # Driftwood; a warm gray for completed notes
-#         "HL1": "#00b3ff",  # Your signature Bright Blue (The "Luminous Signal")
-#         "HL2": "#ff9500",  # Amber; shifted from yellow to a more "fiery" orange-gold
-#         "HL3": "#e65555",  # Soft Crimson; a warm, autumnal red for contrast
-#         "cursor-arrow": "#ffffff",
-#         "default-arrow": "#106586",
-#         "age-color-0": "#fff4e6",  # "Candlelight" white for new notes
-#         "age-color-1": "#00b3ff",
-#         "age-color-2": "#1a120b",
-#         "age-column-bg": "#1a120b",
-#     },
-# )
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+# Load configuration from config.json
+config = Config()
 
 LOG_FILE = "log.txt"
 
-# Configure logging
+# Configure logging from config
+log_level = getattr(logging, config.log_level.upper(), logging.INFO)
 logging.basicConfig(
     filename=LOG_FILE,
-    level=logging.DEBUG,
+    level=log_level,
     format="%(asctime)s - %(levelname)s - %(message)s",
     filemode="w",
+    force=True,
 )
 logging.info("Application started")
-
-# ----- File Watcher for Auto-Reload -----
-# class FileWatcher(FileSystemEventHandler):
-#     def __init__(self, file_path: str, callback):
-#         self.file_path = file_path
-#         self.callback = callback
-
-#     def on_modified(self, event):
-#         """Called when the file is modified."""
-#         if event.src_path == self.file_path:
-#             self.callback()  # Notify the app
-
-# def start_file_watcher(file_path, callback):
-#     """Start a separate thread to watch for file changes."""
-#     event_handler = FileWatcher(file_path, callback)
-#     observer = Observer()
-#     observer.schedule(event_handler, path=file_path, recursive=False)
-#     observer.start()
-#     return observer
 
 
 class StatusBar(Static):
     progress = reactive((0, 0))
     context_node = reactive(None)
     needs_saving = reactive(False)
+    hide_done = reactive(False)
     search_mode = reactive(False)
     search_progress = reactive((0, 0))
+    timer_remaining = reactive(None)
 
     def compose_content(self):
 
-        hl = self.app.get_theme_variable_defaults().get("HL1") or "white"
+        hl = self.app.theme_variables["foreground"]
         progress_text = Text.from_markup(
             f" [{hl}][{self.progress[0]}/{self.progress[1]}][/{hl}]"
         )
+
+        if self.hide_done:
+            hide_done_text = Text.from_markup(f" [{hl}]Ⓧ[/{hl}]")
+        else:
+            hide_done_text = Text.from_markup("")
 
         if not self.needs_saving:
             needs_saving_text = Text("")
         else:
             hl = self.app.get_theme_variable_defaults().get("HL2") or "yellow"
-            needs_saving_text = Text.from_markup(f" [{hl}]Modified[/{hl}] ")
+            needs_saving_text = Text.from_markup(f" [{hl}]\\[S]AVE[/{hl}] ")
+
+        # Timer display
+        if self.timer_remaining is not None:
+            hl = self.app.get_theme_variable_defaults().get("HL3") or "red"
+            timer_text = Text.from_markup(f" [{hl}]{self.timer_remaining}[/{hl}] ")
+        else:
+            timer_text = Text("")
 
         if self.search_mode:
-            hl = self.app.get_theme_variable_defaults().get("HL1") or "white"
+            hl = self.app.theme_variables["HL3"]
+            # hl = self.app.theme_variables["panel-HL"]
+            # logging.info(self.app.theme_variables)
 
             text = Text.from_markup(
                 "🌲 "
-                + f"[{hl}]Search result {self.search_progress[0]+1}/{self.search_progress[1]}[/{hl}] "
+                + f"[{hl}][b]Search result {self.search_progress[0]+1}/{self.search_progress[1]}[/b][/{hl}] | "
             )
             remaining_width = self.size.width - len(text.plain) - 1
 
-            context_path = self.context_node.get_path_string(
-                width=remaining_width
-            )
+            context_path = self.context_node.get_path_string(width=remaining_width)
 
             text = text + Text.from_markup(context_path)
         else:
             start_text = Text.from_markup("🌲 ")
 
-            end_text = needs_saving_text + progress_text
+            end_text = timer_text + needs_saving_text + hide_done_text + progress_text
 
             remaining_width = max(
                 0,
-                self.size.width
-                - len(start_text.plain)
-                - len(end_text.plain)
-                - 1,
+                self.size.width - len(start_text.plain) - len(end_text.plain) - 1,
             )
             path_text = ""
             if self.context_node:
-                path_text = self.context_node.get_path_string(
-                    width=remaining_width
-                )
+                path_text = self.context_node.get_path_string(width=remaining_width)
             path_text += " " * max(0, remaining_width - len(path_text))
             text = start_text + Text.from_markup(path_text) + end_text
 
         self.update(content=text)
 
     def watch_progress(self, new_value):
+        self.compose_content()
+
+    def watch_hide_done(self, new_value):
         self.compose_content()
 
     def watch_context_node(self, new_value):
@@ -213,6 +128,9 @@ class StatusBar(Static):
         self.compose_content()
 
     def watch_search_progress(self, new_value):
+        self.compose_content()
+
+    def watch_timer_remaining(self, new_value):
         self.compose_content()
 
     def on_resize(self, event) -> None:
@@ -230,6 +148,55 @@ class InfoWidget(DataTable):
             f"cycle_mode: {old_index} -> {self.mode_index}, mode = {self.mode_options[self.mode_index]}"
         )
         self.update_data()
+
+    def show_help(self):
+        """Display help information without adding to the cycle."""
+        logging.info("show_help called")
+        # Set mode_index to last position so next cycle wraps to 0 (None/hidden)
+        self.mode_index = len(self.mode_options) - 1
+        self.display = True
+        self.show_header = False
+
+        table_rows = [
+            ["", Text.from_markup("[white][b]Forest Help[/b][/white]")],
+            ["", Text.from_markup("[dim](Press ` to hide)[/dim]")],
+            ["", ""],
+            ["", Text.from_markup("[b]Navigation[/b]")],
+            ["←/→", "Zoom out/in"],
+            ["space", "Toggle collapse"],
+            ["0-9", "Jump to bookmark"],
+            ["", ""],
+            ["", Text.from_markup("[b]Editing[/b]")],
+            ["e/bksp", "Edit note"],
+            ["enter", "Add new note"],
+            ["delete", "Delete note"],
+            ["u/d", "Move note up/down"],
+            ["tab/S-tab", "Indent/deindent"],
+            ["h", "Cycle highlight"],
+            ["x", "Toggle #DONE"],
+            ["", ""],
+            ["", Text.from_markup("[b]Commands[/b]")],
+            [":", "Command mode"],
+            [":b or :bookmark", "Toggle bookmark"],
+            [":sound", "Toggle sound effects"],
+            [":j+ <text>", "Add journal entry"],
+            [":<path hint>+ <text>", "Add entry to best path"],
+            ["", "(e.g. 'Places>LA+ bla')"],
+            [":?<query>", "Search in context"],
+            [":??<query>", "Search globally"],
+            [":insert <name>", "Insert template"],
+            [":run", "Run shell command"],
+            [":help", "Show this help"],
+            ["", ""],
+            ["", Text.from_markup("[b]Other[/b]")],
+            ["s", "Save"],
+            ["`", "Cycle side panel"],
+        ]
+
+        self.clear(columns=True)
+        self.add_columns("", "")
+        self.add_rows(table_rows)
+        self.refresh()
 
     def update_data(self):
 
@@ -338,16 +305,95 @@ class InfoWidget(DataTable):
 
 class MultiPurposeSuggester(Suggester):
 
+    def __init__(self, mode="command"):
+        super().__init__()
+        self.mode = mode  # "command" or "edit"
+        if self.mode == "command":
+            self.placeholder = "help | bookmark | sound | clock | run | timer <duration> | insert <name> | j+ <text> | ?<query> | ??<query> | <path hint>+ <text>"
+        else:
+            self.placeholder = ""
+
     async def get_suggestion(self, value: None | str) -> None | str:
 
-        # Show available commands when input is empty
-        if not value:
-            return "[b]ookmark | run | insert | j+ | ? | ??"
+        if self.mode == "edit":
+            # Suggestions for editing notes
+            if not value:
+                return None
 
-        # Show subtree options when user types "insert "
-        if value == "insert ":
-            subtree_names = " | ".join(SUBTREES)
-            return "insert " + subtree_names
+            # Suggest hashtags
+            if value.endswith("#"):
+                return value + "WELL | #T- | #sum | #max | #min | #avg"
+
+            # Suggest value syntax
+            if value.endswith("$"):
+                return (
+                    value + "variable=value | $variable_inc=value | $variable_dec=value"
+                )
+
+            return None
+
+        # Command mode suggestions
+        if not value:
+            # Show all available commands with syntax hints
+            return self.placeholder
+
+        # Smart auto-completion for partial commands
+        value_lower = value.lower()
+
+        if "help".startswith(value_lower):
+            return "help"
+
+        if "bookmark".startswith(value_lower):
+            return "bookmark"
+
+        if "run".startswith(value_lower):
+            return "run"
+
+        if "clock".startswith(value_lower):
+            return "clock"
+
+        if "sound".startswith(value_lower):
+            return "sound"
+
+        if "timer".startswith(value_lower):
+            return "timer <duration> | timer cancel"
+
+        if value_lower == "j":
+            return "j+ <text>"
+
+        if value_lower == "j+":
+            return "j+ <text>"
+
+        if value in ["?", "??"]:
+            return value + "<query>"
+
+        # Show example durations when user types "timer "
+        if value == "timer ":
+            return "timer 5m | 25m | 1h | 5m 3x | cancel"
+
+        if value == "timer c":
+            return "timer cancel"
+
+        # Show and filter subtree options when user types "insert"
+        if value.startswith("insert"):
+            if value == "insert":
+                return "insert <name>"
+            elif value == "insert ":
+                subtree_names = " | ".join(sorted(SUBTREES.keys()))
+                return "insert " + subtree_names
+            else:
+                # Filter subtrees based on what's been typed
+                partial = value[7:].upper()  # Get text after "insert "
+                matching = [
+                    name for name in SUBTREES.keys() if name.startswith(partial)
+                ]
+                if matching:
+                    if len(matching) == 1:
+                        return "insert " + matching[0]
+                    else:
+                        return "insert " + " | ".join(sorted(matching))
+
+        return None
 
 
 class ForestApp(App):
@@ -361,6 +407,8 @@ class ForestApp(App):
         display: none; /* Initially hidden */
         layer: overlay;
         offset: 0 1;
+        border: $panel;
+        background: $panel 20%;
     }
     ScrollView {
         scrollbar-size: 0 0;  /* Hides the scrollbar */
@@ -368,12 +416,13 @@ class ForestApp(App):
 
     #status-bar {
         background: $panel;
+        color: $foreground 90%;
     }
 
     #info-widget {
         width: 30%;
         height: 100%;
-        background-tint: $foreground 10%;
+        background-tint: $panel 20%;
         display: none;
         layer: overlay;
         dock: right;
@@ -394,23 +443,23 @@ class ForestApp(App):
             color: transparent;
         }
     }
-
-
-    
     """
 
     BINDINGS = [
         Binding("e,backspace", "edit_note()", "Edit note", show=True),
         Binding(":", "command_mode()", "Command mode", show=True),
-        Binding(
-            "grave_accent", "cycle_side_panel()", "Cycle side panel", show=True
-        ),
+        Binding("grave_accent", "cycle_side_panel()", "Cycle side panel", show=True),
     ]
 
     def __init__(self, file_path: str):
         super().__init__()
         self.file_path = file_path
-        # self.observer = None  # Will hold the file watcher
+        self.config = config  # Reference to global config
+
+        # Register themes early so they're available before first render
+        for theme in THEMES.values():
+            self.register_theme(theme)
+        self.theme = self.config.default_theme
 
         self.note_tree = NoteTree(self.file_path)
         self._node_being_edited = None
@@ -418,11 +467,15 @@ class ForestApp(App):
         self._search_index = 0
         self._pre_search_position = (None, None)
 
+        self.sound_effects_enabled = self.config.sound_effects_enabled
+        self.timer = Timer(self)
+
         self.logging = logging
 
     def on_mount(self):
-        self.register_theme(forest_theme)
-        self.theme = "forest"
+        # Play intro sound
+        if self.sound_effects_enabled:
+            play_sound_effect("intro")
 
         # self.notify("It's an older code, sir, but it checks out.")
 
@@ -437,14 +490,12 @@ class ForestApp(App):
         self.status_bar = StatusBar(id="status-bar")
         yield self.status_bar
 
-        self.input_widget = Input(
-            id="input-box", suggester=MultiPurposeSuggester()
-        )
+        self.command_suggester = MultiPurposeSuggester(mode="command")
+        self.edit_suggester = MultiPurposeSuggester(mode="edit")
+        self.input_widget = Input(id="input-box", suggester=self.command_suggester)
         yield self.input_widget
 
-        self.note_tree_widget = NoteTreeWidget(
-            note_tree=self.note_tree, id="note-tree"
-        )
+        self.note_tree_widget = NoteTreeWidget(note_tree=self.note_tree, id="note-tree")
         self.note_tree_widget.focus()
         # self.note_tree_widget.move_cursor_to_line(0)
 
@@ -460,8 +511,10 @@ class ForestApp(App):
         # yield Footer()
 
     def get_theme_variable_defaults(self):
-        if self.theme == "forest":
-            return forest_theme.variables
+        # Return the variables for the current theme
+        theme = THEMES.get(self.theme)
+        if theme:
+            return theme.variables
         return {}
 
         # start_file_watcher(self.file_path, self.load_file_data)  # Start file watcher
@@ -474,9 +527,7 @@ class ForestApp(App):
             len(self._search_matches),
         )
 
-        self.note_tree_widget.update_location(
-            context_node=node.parent, line_node=node
-        )
+        self.note_tree_widget.update_location(context_node=node.parent, line_node=node)
 
     def action_edit_note(self):
         # if the input widget already in use, stop
@@ -495,6 +546,7 @@ class ForestApp(App):
         # Create an Input widget pre-filled with the current label
         self._node_being_edited = node
         # input_widget.id = f"input-{id(node)}"
+        self.input_widget.suggester = self.edit_suggester
         self.input_widget.display = True
         self.input_widget.value = label_text
         self.input_widget.placeholder = ""
@@ -512,9 +564,7 @@ class ForestApp(App):
             if new_text:
                 new_text = apply_input_substitutions(new_text)
 
-                self._node_being_edited._node.text = (
-                    new_text  # set_label(new_label)
-                )
+                self._node_being_edited._node.text = new_text  # set_label(new_label)
                 self._node_being_edited._node.post_text_update()
                 self.note_tree.has_unsaved_operations = True
                 self._node_being_edited = None
@@ -562,6 +612,12 @@ class ForestApp(App):
 
             elif cmd_str in ["b", "bookmark"]:
                 self.note_tree_widget.toggle_bookmark()
+            elif cmd_str == "sound":
+                self.sound_effects_enabled = not self.sound_effects_enabled
+                status = "enabled" if self.sound_effects_enabled else "disabled"
+                self.notify(f"Sound effects {status}")
+            elif cmd_str == "help":
+                self.info_widget.show_help()
             elif cmd_str in ["run"]:
                 try:
                     logging.info("Running command")
@@ -571,6 +627,39 @@ class ForestApp(App):
             elif cmd_str.startswith("insert "):
                 subtree_name = cmd_str.split(" ", 1)[-1]
                 self.note_tree_widget.add_subtree(subtree_name)
+            elif cmd_str == "clock":
+                title, body = compose_clock_notify_contents(self.config.location)
+                self.notify(body, title=title)
+            elif cmd_str == "timer cancel":
+                self.timer.cancel()
+            elif cmd_str.startswith("timer "):
+                duration_str = cmd_str[6:].strip()
+                self.timer.start(duration_str)
+            elif "+ " in cmd_str:
+                # Quick add: <location hint>+ <note text>
+                plus_idx = cmd_str.index("+ ")
+                hint_str = cmd_str[:plus_idx].strip()
+                note_text = cmd_str[plus_idx + 2 :].strip()
+
+                if hint_str and note_text:
+                    matching_nodes = self.note_tree.find_matches(
+                        hint_str, global_scope=True, match_path=True
+                    )
+                    if matching_nodes:
+                        target_node = matching_nodes[0]
+                        note_text = apply_input_substitutions(note_text)
+                        new_node = target_node.add_child(note_text)
+                        self.note_tree.index_nodes()
+                        self.note_tree.update_visible_node_list()
+                        self.note_tree.has_unsaved_operations = True
+
+                        # self.note_tree_widget.update_location(
+                        #     context_node=target_node, line_node=new_node
+                        # )
+                        path_str = target_node.get_path_string(width=40)
+                        self.notify(f"Added to: {path_str}")
+                    else:
+                        self.notify("No matching node found")
 
         self.input_widget.clear()
         self.input_widget.display = False
@@ -583,9 +672,10 @@ class ForestApp(App):
 
         self.input_widget.offset = (0, 1)
 
+        self.input_widget.suggester = self.command_suggester
         self.input_widget.display = True
         self.input_widget.value = ""
-        self.input_widget.placeholder = "bookmark | run | insert | j+ | ? | ??"
+        self.input_widget.placeholder = self.command_suggester.placeholder
         self.input_widget.focus()
         self.input_widget.border_title = None  # "Command mode"
 
@@ -628,22 +718,6 @@ class ForestApp(App):
             self.note_tree_widget.action_add_note()
         elif event.key in "0123456789":
             self.note_tree_widget.visit_bookmark(int(event.key))
-
-    # def on_resize(self, event) -> None:
-    #     self.
-    #     new_size = event.size
-    #     self.progress_bar.width = new_size.width
-    # logging.info(f"Window resized to: {new_size.width} x {new_size.height}")
-
-    # def start_file_watcher(self, file_path, callback):
-    #     """Start the file watcher in a background thread."""
-    #     self.observer = start_file_watcher(file_path, callback)
-
-    # def on_exit(self) -> None:
-    #     """Ensure the file watcher stops when the app exits."""
-    #     if self.observer:
-    #         self.observer.stop()
-    #         self.observer.join()
 
 
 if __name__ == "__main__":

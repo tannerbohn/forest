@@ -1,6 +1,39 @@
+import logging
 import os
+import random
 import re
+import urllib.request
 from datetime import datetime
+
+from playsound3 import playsound
+
+_ASSETS_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "assets", "sound_effects")
+)
+
+_SOUNDS = {
+    "intro": [
+        os.path.join(_ASSETS_DIR, "wave_1.wav"),
+        os.path.join(_ASSETS_DIR, "wave_2.mp3"),
+        os.path.join(_ASSETS_DIR, "wave_3.mp3"),
+        os.path.join(_ASSETS_DIR, "wave_4.wav"),
+    ],
+    "timer": [os.path.join(_ASSETS_DIR, "notification_1.mp3")],
+}
+
+
+def play_sound_effect(name):
+    """Play a sound effect by name. Supported: 'intro', 'timer'."""
+    if name not in _SOUNDS:
+        logging.warning(f"Unknown sound effect: {name}")
+        return
+    path = random.choice(_SOUNDS[name])
+
+    try:
+        playsound(path, block=False)
+    except Exception as e:
+        logging.warning(f"Could not play {name} sound: {e}")
+
 
 MONTH_ORDER = [
     "January",
@@ -16,6 +49,44 @@ MONTH_ORDER = [
     "November",
     "December",
 ]
+
+
+def compose_clock_notify_contents(location=None):
+    now = datetime.now()
+    tz = now.astimezone().strftime("%Z")
+    title = now.strftime("%I:%M %p").lstrip("0") + " " + tz
+
+    # Date and day-of-year
+    day_of_year = now.timetuple().tm_yday
+    year = now.year
+    total_days = (
+        366 if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 365
+    )
+    days_remaining = total_days - day_of_year
+
+    body = now.strftime("%A, %B %d, %Y")
+    body += f"\n{year} is {100*day_of_year/total_days:.1f}% over."
+
+    if location:
+        title = f"{title} - {location}"
+        try:
+            loc_encoded = urllib.request.quote(location)
+            url = f"https://wttr.in/{loc_encoded}?format=%C+%t+%m+%S+%s"
+            resp = urllib.request.urlopen(url, timeout=3)
+            parts = resp.read().decode().strip()
+            # Format: "Condition +Temp MoonEmoji Sunrise Sunset"
+            # Split from the right to isolate sunrise/sunset times
+            tokens = parts.rsplit(" ", 2)
+            if len(tokens) == 3:
+                weather_and_moon, sunrise, sunset = tokens
+                body += f"\n{location}: {weather_and_moon}"
+                body += f"\nSunrise {sunrise}  Sunset {sunset}"
+            else:
+                body += f"\n{location}: {parts}"
+        except Exception as e:
+            logging.error(f"Failed to get weather: {e}")
+
+    return title, body
 
 
 def apply_input_substitutions(text: str) -> str:

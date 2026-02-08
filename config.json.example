@@ -1,0 +1,6 @@
+{
+    "sound_effects_enabled": true,
+    "default_theme": "forest",
+    "log_level": "INFO",
+    "location": "New York"
+}

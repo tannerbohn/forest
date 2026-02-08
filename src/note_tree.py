@@ -8,13 +8,9 @@ from datetime import datetime
 
 # from encryption_manager import encryption_manager
 from node import Node
-from utils import (
-    MONTH_ORDER,
-    convert_to_nested_list,
-    determine_state_filename,
-    normalize_indentation,
-    trigram_similarity,
-)
+from utils import (MONTH_ORDER, convert_to_nested_list,
+                   determine_state_filename, normalize_indentation,
+                   trigram_similarity)
 
 # import pyclip
 
@@ -68,6 +64,9 @@ class NoteTree:
 
                 prev_depth = depth
 
+        # controls whether to hide all notes marked as done
+        self.hide_done = False
+
         node_list = self.index_nodes()
 
         self.journal = None
@@ -86,9 +85,7 @@ class NoteTree:
                         if isinstance(prop, str) and re.match(
                             r"\d{4}-\d{2}-\d{2}", prop
                         ):
-                            creation_time_map[key] = datetime.strptime(
-                                prop, "%Y-%m-%d"
-                            )
+                            creation_time_map[key] = datetime.strptime(prop, "%Y-%m-%d")
                             continue
 
                         # TODO: improve the matching process?
@@ -109,9 +106,7 @@ class NoteTree:
                                 matching_node.is_collapsed = True
                             elif prop == "context":
                                 context_node = matching_node
-                            elif (
-                                isinstance(prop, list) and prop[0] == "bookmark"
-                            ):
+                            elif isinstance(prop, list) and prop[0] == "bookmark":
                                 self.bookmarks[prop[1]] = matching_node
                                 self.bookmark_last_use_times[prop[1]] = (
                                     datetime.fromtimestamp(prop[2])
@@ -123,9 +118,7 @@ class NoteTree:
 
         self.has_unsaved_operations = False
         self.context_node = context_node or self.root
-        self.visible_node_list = self.context_node.get_node_list(
-            only_visible=True
-        )
+        self.update_visible_node_list()
 
     def save(self):
         # apply encryption where needed
@@ -156,9 +149,7 @@ class NoteTree:
                 if node in self.bookmarks.values():
                     for k, _node in self.bookmarks.items():
                         if node == _node:
-                            last_use_time = self.bookmark_last_use_times[
-                                k
-                            ].timestamp()
+                            last_use_time = self.bookmark_last_use_times[k].timestamp()
                             properties.append(("bookmark", k, last_use_time))
                             break
 
@@ -172,12 +163,16 @@ class NoteTree:
 
         self.has_unsaved_operations = False
 
+    def update_visible_node_list(self):
+        self.visible_node_list = self.context_node.get_node_list(
+            only_visible=True,
+            hide_done=self.hide_done,
+        )
+
     def toggle_collapse(self, node: None):
         if node.children:
             node.toggle_collapse()
-            self.visible_node_list = self.context_node.get_node_list(
-                only_visible=True
-            )
+            self.update_visible_node_list()
             # self.has_unsaved_operations = True
 
     def ensure_journal_existence(self):
@@ -198,10 +193,11 @@ class NoteTree:
         return node_list
 
     def get_node_list(self, only_visible=False):
-        return self.root.get_node_list(only_visible=only_visible)
+        return self.root.get_node_list(
+            only_visible=only_visible, hide_done=self.hide_done
+        )
 
     def contextual_add_new_note(self, focus_node):
-        # focus_node = self.visible_node_list[self.focus_index]
         is_context = focus_node == self.context_node
         mode = ""
         if (
@@ -219,27 +215,28 @@ class NoteTree:
             # self.focus_index += 1
             new_node.text = "NEW NODE"  # start_edit_mode()
             self.index_nodes()
-            self.visible_node_list = self.context_node.get_node_list(
-                only_visible=True
-            )
+            self.update_visible_node_list()
             self.has_unsaved_operations = True
 
             return new_node
 
     def move_line(self, node: Node, direction: str):
-        index = node.parent.children.index(node)
-        if direction == "up" and index > 0:
-            n = node.parent.children.pop(index)
-            node.parent.children.insert(index - 1, n)
+        siblings = node.parent.children
+        visible = [s for s in siblings if not (self.hide_done and s.is_done())]
+        vi = visible.index(node)
+
+        if direction == "up" and vi > 0:
+            target = visible[vi - 1]
+            siblings.remove(node)
+            siblings.insert(siblings.index(target), node)
             self.has_unsaved_operations = True
-        elif direction == "down" and index < len(node.parent.children) - 1:
-            n = node.parent.children.pop(index)
-            node.parent.children.insert(index + 1, n)
+        elif direction == "down" and vi < len(visible) - 1:
+            target = visible[vi + 1]
+            siblings.remove(node)
+            siblings.insert(siblings.index(target) + 1, node)
             self.has_unsaved_operations = True
 
-        self.visible_node_list = self.context_node.get_node_list(
-            only_visible=True
-        )
+        self.update_visible_node_list()
 
     def deindent(self, focus_node, count=1):
         for _ in range(count):
@@ -251,18 +248,14 @@ class NoteTree:
                 self.index_nodes()
                 self.has_unsaved_operations = True
 
-        self.visible_node_list = self.context_node.get_node_list(
-            only_visible=True
-        )
+        self.update_visible_node_list()
 
     def indent(self, focus_node, count=1):
         for _ in range(count):
-            focus_node.move_deeper()
+            focus_node.move_deeper(done_are_hidden=self.hide_done)
             self.index_nodes()
         self.has_unsaved_operations = True
-        self.visible_node_list = self.context_node.get_node_list(
-            only_visible=True
-        )
+        self.update_visible_node_list()
 
     def delete_focus_node(self, focus_node):
         # TODO: what if we accidentally delete the context node?
@@ -272,9 +265,7 @@ class NoteTree:
             focus_node.delete_single()
         self.index_nodes()
         self.has_unsaved_operations = True
-        self.visible_node_list = self.context_node.get_node_list(
-            only_visible=True
-        )
+        self.update_visible_node_list()
 
     def add_journal_entry(self, entry):
         self.ensure_journal_existence()
@@ -297,9 +288,7 @@ class NoteTree:
         years = [c.text.split()[0] for c in self.journal.children]
         if not year in years:
             year_node = self.journal.add_child(year)
-            self.journal.children = sorted(
-                self.journal.children, key=lambda c: c.text
-            )
+            self.journal.children = sorted(self.journal.children, key=lambda c: c.text)
         else:
             year_node = self.journal.children[years.index(year)]
 
@@ -318,9 +307,7 @@ class NoteTree:
         new_node = month_node.add_child(entry)
 
         self.index_nodes()
-        self.visible_node_list = self.context_node.get_node_list(
-            only_visible=True
-        )
+        self.update_visible_node_list()
 
         self.has_unsaved_operations = True
 
@@ -330,9 +317,7 @@ class NoteTree:
         self.context_node = node
         if expand:
             self.context_node.is_collapsed = False
-        self.visible_node_list = self.context_node.get_node_list(
-            only_visible=True
-        )
+        self.update_visible_node_list()
 
         # self.has_unsaved_operations = True
 
@@ -380,23 +365,26 @@ class NoteTree:
     def determine_if_bookmarked(self, node: None):
         return node in self.bookmarks.values()
 
-    def find_matches(self, query, global_scope=True):
+    def find_matches(self, query, global_scope=True, match_path=False):
         # find the node in the tree that best matches the query string
 
         if global_scope:
             node_list = self.get_node_list()
         else:
-            node_list = self.context_node.get_node_list(only_visible=False)
+            node_list = self.context_node.get_node_list(
+                only_visible=False, hide_done=self.hide_done
+            )
 
         matching_nodes = []
 
         for n in node_list:
-            text = n.text.replace(
-                "-", " "
-            ).lower()  # remove dashes due to hashtags
-            score = trigram_similarity(
-                text, query.lower(), coverage_weight=0.75
-            )
+            if match_path:
+                text = ">".join(n.get_path(include_self=True))
+            else:
+                text = n.text
+
+            text = text.replace("-", " ").lower()  # remove dashes due to hashtags
+            score = trigram_similarity(text, query.lower(), coverage_weight=0.75)
             if score:
                 matching_nodes.append((n, score))
 
@@ -406,9 +394,7 @@ class NoteTree:
             return []
         else:
             top_score = matching_nodes[0][1]
-            matching_nodes = [
-                n for n, s in matching_nodes if s >= top_score * 0.75
-            ]
+            matching_nodes = [n for n, s in matching_nodes if s >= top_score * 0.75]
 
         return matching_nodes
 

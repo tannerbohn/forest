@@ -2,3 +2,4 @@ textual
 pytimeparse
 watchdog
 rich
+playsound3

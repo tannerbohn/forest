@@ -1,6 +1,7 @@
 # personal
 experiments/
 log.txt
+config.json
 trees/*
 !trees/intro.txt
 !trees/states/intro_state.txt

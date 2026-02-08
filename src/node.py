@@ -122,7 +122,7 @@ class Node:
         nb_parts = len(parts)
         max_part_length = max((width - 3 * nb_parts) / nb_parts, 15)
 
-        path_str = " ▶ ".join(
+        path_str = " › ".join(  # ⯈
             [
                 (
                     p
@@ -193,9 +193,7 @@ class Node:
                         )
                         words.remove(w)
                         words.append(
-                            self.expiry_datetime.strftime(
-                                "#T-%Y-%m-%dT%H:%M:%S"
-                            )
+                            self.expiry_datetime.strftime("#T-%Y-%m-%dT%H:%M:%S")
                         )
                         self.text = " ".join(words)
                     break
@@ -216,9 +214,7 @@ class Node:
                 words = [w for w in words if not w.startswith("#due")]
                 due_datetime = self.get_well_next_due_datetime()
                 if due_datetime:
-                    words.append(
-                        f"#due={due_datetime.strftime('%Y-%m-%dT%H:%M:%S')}"
-                    )
+                    words.append(f"#due={due_datetime.strftime('%Y-%m-%dT%H:%M:%S')}")
 
             # look through value dict for anything to increment or decrement
             for k, v in self.value_dict.items():
@@ -228,9 +224,7 @@ class Node:
                 elif k.endswith("_dec"):
                     delta = -1
                 if delta:
-                    old_word = [
-                        w for w in words if w.lower().startswith("$" + k)
-                    ][0]
+                    old_word = [w for w in words if w.lower().startswith("$" + k)][0]
                     words[words.index(old_word)] = f"${k}={v+delta}"
 
             self.text = " ".join(words)
@@ -296,9 +290,7 @@ class Node:
     def get_days_old(self, recurse=False):
         days = (datetime.now() - self.creation_time).days
         if self.is_collapsed or recurse:
-            return min(
-                [days] + [c.get_days_old(recurse=True) for c in self.children]
-            )
+            return min([days] + [c.get_days_old(recurse=True) for c in self.children])
         else:
             return days
 
@@ -337,10 +329,7 @@ class Node:
         if "avg" in hashtags:
             if branch_values := self.get_branch_values():
                 values_str = "|".join(
-                    [
-                        f"avg({k})={sum(v)/len(v)}"
-                        for k, v in branch_values.items()
-                    ]
+                    [f"avg({k})={sum(v)/len(v)}" for k, v in branch_values.items()]
                 )
                 text += f" ({values_str})"
 
@@ -447,15 +436,15 @@ class Node:
         self.update_child_depth()
         parent.children.remove(self)
         self.parent = grandparent
-        grandparent.children.insert(
-            grandparent.children.index(parent) + 1, self
-        )
+        grandparent.children.insert(grandparent.children.index(parent) + 1, self)
 
-    def move_deeper(self):
+    def move_deeper(self, done_are_hidden=False):
         parent = self.parent
         if parent is None:
             return
-        siblings = parent.children
+
+        # if done nodes are hidden, we want to find the first non-done sibling-of-parent node
+        siblings = [s for s in parent.children if not (done_are_hidden and s.is_done())]
 
         sibling_index = siblings.index(self)
         if sibling_index == 0:
@@ -463,7 +452,7 @@ class Node:
 
         prev_sibling = siblings[sibling_index - 1]
 
-        siblings.remove(self)
+        parent.children.remove(self)
 
         self.depth += 1
         self.update_child_depth()
@@ -476,11 +465,17 @@ class Node:
         for c in self.children:
             c.show()
 
-    def get_node_list(self, only_visible=False):
+    def get_node_list(self, only_visible=False, hide_done=False):
+
+        if hide_done and self.is_done():
+            return []
+
         l = [self]
         if (not only_visible) or (only_visible and not self.is_collapsed):
             for c in self.children:
-                l.extend(c.get_node_list(only_visible=only_visible))
+                l.extend(
+                    c.get_node_list(only_visible=only_visible, hide_done=hide_done)
+                )
         return l
 
     def post_text_update(self):
@@ -554,9 +549,7 @@ class Node:
         if match := re.search(r"#due=(\S+)\b", self.text):
             due_timestamp = match.group(1)
             try:
-                due_datetime = datetime.strptime(
-                    due_timestamp, "%Y-%m-%dT%H:%M:%S"
-                )
+                due_datetime = datetime.strptime(due_timestamp, "%Y-%m-%dT%H:%M:%S")
             except ValueError:
                 logger.warning(f"Invalid Well due timestamp: {due_timestamp}")
         return due_datetime

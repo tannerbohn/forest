@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import random
@@ -16,7 +17,7 @@ from utils import (MONTH_ORDER, convert_to_nested_list,
 
 
 class NoteTree:
-    def __init__(self, filename):
+    def __init__(self, filename, undo_depth=50):
         self.filename = filename
 
         self.state_filename = determine_state_filename(filename)
@@ -120,6 +121,10 @@ class NoteTree:
         self.context_node = context_node or self.root
         self.update_visible_node_list()
 
+        self._undo_stack = []
+        self._redo_stack = []
+        self._undo_depth = undo_depth
+
     def save(self):
         # apply encryption where needed
         # self.encrypt()
@@ -168,6 +173,97 @@ class NoteTree:
             only_visible=True,
             hide_done=self.hide_done,
         )
+
+    # --- Undo/Redo ---
+    # Snapshot-based: before each mutation, deepcopy the affected subtree.
+    # On undo, swap it back. Redo is the mirror.
+
+    def _get_index_path(self, node):
+        """Return path from root as list of child indices, e.g. [2, 0, 3]."""
+        path = []
+        while node.parent is not None:
+            path.append(node.parent.children.index(node))
+            node = node.parent
+        return list(reversed(path))
+
+    def _resolve_index_path(self, path):
+        """Follow an index path from root to find the node. Falls back to root."""
+        node = self.root
+        for idx in path:
+            if idx < len(node.children):
+                node = node.children[idx]
+            else:
+                return self.root
+        return node
+
+    def _snapshot_subtree(self, subtree_root):
+        """Deepcopy a subtree, temporarily disconnecting parent to avoid copying upward."""
+        saved_parent = subtree_root.parent
+        subtree_root.parent = None
+        subtree_copy = copy.deepcopy(subtree_root)
+        subtree_root.parent = saved_parent
+        return subtree_copy
+
+    def _make_snapshot(self, subtree_root):
+        """Capture the subtree plus context node position for later restoration."""
+        return {
+            'path': self._get_index_path(subtree_root),
+            'subtree': self._snapshot_subtree(subtree_root),
+            'context_path': self._get_index_path(self.context_node),
+        }
+
+    def push_undo(self, subtree_root):
+        """Save a snapshot before a mutation. Clears the redo stack."""
+        self._undo_stack.append(self._make_snapshot(subtree_root))
+        if len(self._undo_stack) > self._undo_depth:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+
+    def _swap_subtree(self, snapshot):
+        """Replace the subtree at snapshot's path with the snapshot's copy.
+        Returns a reverse snapshot of what was replaced (for the opposite stack)."""
+        path = snapshot['path']
+        current_node = self._resolve_index_path(path)
+        reverse = self._make_snapshot(current_node)
+
+        restored = snapshot['subtree']
+        if not path:
+            # Restoring root
+            self.root = restored
+            self.root.parent = None
+        else:
+            parent = self._resolve_index_path(path[:-1]) if len(path) > 1 else self.root
+            child_idx = path[-1]
+            restored.parent = parent
+            parent.children[child_idx] = restored
+            restored.depth = parent.depth + 1
+            restored.update_child_depth()
+
+        # Restore context node via its saved index path
+        self.context_node = self._resolve_index_path(snapshot['context_path'])
+
+        self.index_nodes()
+        self.update_visible_node_list()
+        self.has_unsaved_operations = True
+        return reverse
+
+    def pop_undo(self):
+        """Undo the last mutation. Returns True if successful."""
+        if not self._undo_stack:
+            return False
+        snapshot = self._undo_stack.pop()
+        reverse = self._swap_subtree(snapshot)
+        self._redo_stack.append(reverse)
+        return True
+
+    def pop_redo(self):
+        """Redo the last undone mutation. Returns True if successful."""
+        if not self._redo_stack:
+            return False
+        snapshot = self._redo_stack.pop()
+        reverse = self._swap_subtree(snapshot)
+        self._undo_stack.append(reverse)
+        return True
 
     def toggle_collapse(self, node: None):
         if node.children:

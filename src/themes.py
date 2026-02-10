@@ -125,7 +125,8 @@ forest_v2_bkg = "#110d08"  # rich dark soil
 forest_v2 = Theme(
     name="forest_v2",
     primary="#2b2418",  # warm brown for selected line in info table
-    foreground="#c4b99a",  # aged parchment by firelight
+    secondary="#18aee9",  # same as HL1
+    foreground="#d0c6a8",  # aged parchment by firelight
     background=forest_v2_bkg,  # deep soil
     surface=forest_v2_bkg,  # main background
     panel="#2a2215",  # warm bark-brown header/footer
@@ -135,9 +136,9 @@ forest_v2 = Theme(
         "footer-key-foreground": "white",
         "input-selection-background": "white 15%",
         "dim-text": "#4a4232",  # fallen leaves - completed notes
-        "HL1": "#3d8db5",  # moss/sage green - primary highlight
-        "HL2": "#d4a843",  # dappled sunlight - ideas
-        "HL3": "#c45a2a",  # glowing embers - high importance
+        "HL1": "#18aee9",  # vivid sky blue - primary highlight
+        "HL2": "#deb650",  # dappled sunlight - ideas
+        "HL3": "#d16835",  # glowing embers - high importance
         "cursor-arrow": "white",  # current-line indicator
         "default-arrow": "#6b5d45",  # warm brown line marker
         "age-color-0": "#8aad6e",  # new growth - fresh notes
@@ -176,6 +177,7 @@ TEXT_COLOR_REGEX_LIST = [
     (r"\?", "#ffffff"),
     (r"\b\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?\b", "dim"),
     (r"\*.*\*", "bold"),
+    (r"^ (>.*)", "dim"),
     # (r"TODO|FIXME", "#ff0000"),  # Color TODO/FIXME red
     # (r"(?i)\b(What|How|Why|If|Could|Is)\b", "bold"),
 ]

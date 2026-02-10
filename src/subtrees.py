@@ -1,43 +1,44 @@
 SUBTREES = {}
 
 SUBTREES["NOTICE"] = {
-    "What sounds do you remember?": None,
-    "What was something interesting you touched?": None,
-    "What was an interesting smallscape?": None,
+    "> What sounds do you remember?": None,
+    "> What was something interesting you touched?": None,
+    "> What was an interesting smallscape?": None,
 }
 
 SUBTREES["BRAINSTORM"] = {
     "Understanding the problem": {
-        "Why does this problem matter?/Why do we see it as a problem?": None,
-        "Why does this problem exist?": None,
-        "Why hasn't it been solved already?": None,
-        "Why might that change now?": None,
+        "> Why does this problem matter?/Why do we see it as a problem?": None,
+        "> Why does this problem exist?": None,
+        "> Why hasn't it been solved already?": None,
+        "> Why might that change now?": None,
     },
-    "How can I frame this problem as an interesting question?": None,
-    "What assumptions are being made here?": None,
-    "What can be done to make this problem go away?": None,
-    "What can I bring to this that others cannot?": None,
-    "What rules are there that I can break to demonstrate my worth?": None,
-    "Approach the problem from the opposite end. How can you avoid failure?": None,
+    "> How can I frame this problem as an interesting question?": None,
+    "> What assumptions are being made here?": None,
+    "> What can be done to make this problem go away?": None,
+    "> What can I bring to this that others cannot?": None,
+    "> What rules are there that I can break to demonstrate my worth?": None,
+    "> Approach the problem from the opposite end. How can you avoid failure?": None,
     "SCAMPER": {
-        "Substitute": None,
-        "Combine": None,
-        "Adapt": None,
-        "Magnify/Modify": None,
-        "Put to other use": None,
-        "Eliminate": None,
-        "Rearrange/Reverse": None,
+        "> Substitute": None,
+        "> Combine": None,
+        "> Adapt": None,
+        "> Magnify/Modify": None,
+        "> Put to other use": None,
+        "> Eliminate": None,
+        "> Rearrange/Reverse": None,
     },
-    "Ask 10 questions about it": None,
-    "Come up with 5 terrible ideas": None,
-    "Closely inspect a single detail": None,
+    "> Ask 10 questions about it": None,
+    "> Come up with 5 terrible ideas": None,
+    "> Closely inspect a single detail": None,
     "Alternative perspectives": {
-        "What would a 5 year old think of this?": None,
-        "What would Steve Jobs be frustrated by?": None,
+        "> What would a 5 year old think of this?": None,
+        "> What would Steve Jobs be frustrated by?": None,
     },
-    "If I could try *anything* to solve this, what would it be? (and what else x3)": None,
-    "What would it mean to align a solution to my values?": None,
-    "What is the smallest change that would make the largest difference?": None,
+    "> If I could try *anything* to solve this, what would it be? (and what else x3)": None,
+    "> What would it mean to align a solution to my values?": None,
+    "> What is the smallest change that would make the largest difference?": None,
+    "> What paradoxes are at play here?": None,
 }
 
 SUBTREES["VALUES"] = {
@@ -73,14 +74,14 @@ SUBTREES["DECIDING"] = {
 }
 
 SUBTREES["FLOW"] = {
-    "Reduce friction in the desired direction": None,
-    "Build momentum": None,
-    "Establish a 'sink' to create pull in that direction": None,
-    "Positive feedback loops": None,
-    "Channeling (e.g. set milestones to celebrare)": None,
-    "Potential energy (position yourself/team in a way to maximize potential)": None,
-    "Catalysts (find a key individual or resource to accelerate/spark movement in the desired direction)": None,
-    "Induction: manufacture flow in a nearby current to induce flow in the target one": None,
+    "> Reduce friction in the desired direction": None,
+    "> Build momentum": None,
+    "> Establish a 'sink' to create pull in that direction": None,
+    "> Positive feedback loops": None,
+    "> Channeling (e.g. set milestones to celebrare)": None,
+    "> Potential energy (position yourself/team in a way to maximize potential)": None,
+    "> Catalysts (find a key individual or resource to accelerate/spark movement in the desired direction)": None,
+    "> Induction: manufacture flow in a nearby current to induce flow in the target one": None,
 }
 
 # morning mental battery:

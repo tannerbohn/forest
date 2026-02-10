@@ -58,7 +58,7 @@ class StatusBar(Static):
 
     def compose_content(self):
 
-        hl = self.app.theme_variables["foreground"]
+        hl = self.app.theme_variables["secondary"]
         progress_text = Text.from_markup(
             f" [{hl}][{self.progress[0]}/{self.progress[1]}][/{hl}]"
         )
@@ -174,6 +174,8 @@ class InfoWidget(DataTable):
             ["tab/S-tab", "Indent/deindent"],
             ["h", "Cycle highlight"],
             ["x", "Toggle #DONE"],
+            ["X", "Toggle hiding #DONE notes"],
+            ["z/Z", "Undo/redo"],
             ["", ""],
             ["", Text.from_markup("[b]Commands[/b]")],
             [":", "Command mode"],
@@ -407,8 +409,8 @@ class ForestApp(App):
         display: none; /* Initially hidden */
         layer: overlay;
         offset: 0 1;
-        border: $panel;
-        background: $panel 20%;
+        border: $secondary 75%;
+        background: $background;
     }
     ScrollView {
         scrollbar-size: 0 0;  /* Hides the scrollbar */
@@ -422,7 +424,7 @@ class ForestApp(App):
     #info-widget {
         width: 30%;
         height: 100%;
-        background-tint: $panel 20%;
+        background-tint: $panel 50%;
         display: none;
         layer: overlay;
         dock: right;
@@ -461,7 +463,7 @@ class ForestApp(App):
             self.register_theme(theme)
         self.theme = self.config.default_theme
 
-        self.note_tree = NoteTree(self.file_path)
+        self.note_tree = NoteTree(self.file_path, undo_depth=self.config.undo_depth)
         self._node_being_edited = None
         self._search_matches = []
         self._search_index = 0
@@ -477,7 +479,15 @@ class ForestApp(App):
         if self.sound_effects_enabled:
             play_sound_effect("intro")
 
+        if self.config.auto_save and self.config.auto_save_interval > 0:
+            self.set_interval(self.config.auto_save_interval, self._auto_save)
+
         # self.notify("It's an older code, sir, but it checks out.")
+
+    def _auto_save(self):
+        if self.note_tree.has_unsaved_operations:
+            self.note_tree.save()
+            self.status_bar.needs_saving = False
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -564,6 +574,7 @@ class ForestApp(App):
             if new_text:
                 new_text = apply_input_substitutions(new_text)
 
+                self.note_tree.push_undo(self._node_being_edited._node.parent)
                 self._node_being_edited._node.text = new_text  # set_label(new_label)
                 self._node_being_edited._node.post_text_update()
                 self.note_tree.has_unsaved_operations = True
@@ -586,6 +597,7 @@ class ForestApp(App):
             cmd_str = event.value.strip()
             if cmd_str.startswith("j+ "):
                 text = cmd_str[3:]
+                self.note_tree.push_undo(self.note_tree.root)
                 self.note_tree_widget.add_journal_entry(text)
             elif cmd_str.startswith("?"):
                 global_scope = False
@@ -647,6 +659,7 @@ class ForestApp(App):
                     )
                     if matching_nodes:
                         target_node = matching_nodes[0]
+                        self.note_tree.push_undo(target_node)
                         note_text = apply_input_substitutions(note_text)
                         new_node = target_node.add_child(note_text)
                         self.note_tree.index_nodes()
@@ -656,7 +669,7 @@ class ForestApp(App):
                         # self.note_tree_widget.update_location(
                         #     context_node=target_node, line_node=new_node
                         # )
-                        path_str = target_node.get_path_string(width=40)
+                        path_str = target_node.get_path_string(width=100)
                         self.notify(f"Added to: {path_str}")
                     else:
                         self.notify("No matching node found")

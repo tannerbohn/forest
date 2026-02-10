@@ -119,21 +119,55 @@ class Node:
         if not parts:
             return ""
 
-        nb_parts = len(parts)
-        max_part_length = max((width - 3 * nb_parts) / nb_parts, 15)
+        separator = " › "
+        sep_total = len(separator) * (len(parts) - 1)
+        available = width - sep_total
+        min_part = 4  # minimum chars per part (3 visible + "…")
 
-        path_str = " › ".join(  # ⯈
-            [
-                (
-                    p
-                    if len(p) < max_part_length
-                    else p[: int(max_part_length) - 3] + "..."
-                )
-                for p in parts
-            ]
-        )
+        lengths = [len(p) for p in parts]
+
+        if sum(lengths) <= available:
+            return separator.join(parts)
+
+        # Distribute available space: short parts keep full length,
+        # long parts share the remainder equally.
+        allocs = lengths[:]
+        for _ in range(len(parts)):
+            # Find the cap where long parts (those above cap) split the
+            # space left after short parts (those at or below cap).
+            # Sort to find the right threshold.
+            sorted_lens = sorted(allocs)
+            remaining = available
+            settled = 0
+            cap = available
+            for i, l in enumerate(sorted_lens):
+                slots = len(parts) - i
+                fair_share = remaining // slots if slots else remaining
+                if l <= fair_share:
+                    remaining -= l
+                    settled += 1
+                else:
+                    cap = max(fair_share, min_part)
+                    break
+            else:
+                cap = max(remaining // max(len(parts) - settled, 1), min_part)
+
+            new_allocs = [min(l, cap) for l in lengths]
+            if sum(new_allocs) <= available:
+                allocs = new_allocs
+                break
+            allocs = new_allocs
+
+        truncated = []
+        for p, a in zip(parts, allocs):
+            if len(p) <= a:
+                truncated.append(p)
+            else:
+                truncated.append(p[: max(a - 1, 1)] + "…")
+        path_str = separator.join(truncated)
+
         if len(path_str) > width:
-            path_str = "..." + path_str[-(width - 3) :]
+            path_str = "…" + path_str[-(width - 1):]
         return path_str
 
     def is_done(self, consider_parent=True):

@@ -35,6 +35,8 @@ class NoteTreeWidget(Tree):
         Binding("delete", "delete_node()", "Delete", show=False),
         Binding("u", "move_node('up')", "Move up", show=False),
         Binding("d", "move_node('down')", "Move down", show=False),
+        Binding("z", "undo()", "Undo", show=False),
+        Binding("Z", "redo()", "Redo", show=False),
     ]
 
     def __init__(self, note_tree: NoteTree, id: str):
@@ -101,7 +103,7 @@ class NoteTreeWidget(Tree):
                 arrow_str = "[bold]≡[/bold]"  # "[bold]⁝[/bold]"  #≣ "≡" #"═" #"⯈" #"▶"
             else:
                 if is_cursor:
-                    arrow_str = "🞍"  # "⯐" #"•" #"━"
+                    arrow_str = "●" #"🞍"  # "⯐" #"•" #"━"
                 else:
                     arrow_str = "🞌"  # "⋅" #"─" #"🢜" #"►"
 
@@ -284,6 +286,7 @@ class NoteTreeWidget(Tree):
         if not self.cursor_node:
             return
 
+        self.note_tree.push_undo(self.cursor_node._node.parent)
         self.cursor_node._node.cycle_highlight()
         self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
 
@@ -291,6 +294,7 @@ class NoteTreeWidget(Tree):
         if not self.cursor_node:
             return
 
+        self.note_tree.push_undo(self.cursor_node._node.parent)
         self.cursor_node._node.toggle_done()
         self.note_tree.has_unsaved_operations = True
         self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
@@ -331,6 +335,7 @@ class NoteTreeWidget(Tree):
 
         _node = self.cursor_node._node
 
+        self.note_tree.push_undo(_node.parent)
         self.note_tree.indent(self.cursor_node._node)
         parent_widget = self.cursor_node.parent
         if parent_widget is None or parent_widget.parent is None:
@@ -345,6 +350,9 @@ class NoteTreeWidget(Tree):
             return
 
         _node = self.cursor_node._node
+        # Deindent moves node from parent to grandparent, so snapshot grandparent
+        undo_target = _node.parent.parent if _node.parent and _node.parent.parent else _node.parent
+        self.note_tree.push_undo(undo_target)
         self.note_tree.deindent(self.cursor_node._node)
         self.render()  # target_widget=self.cursor_node.parent.parent)
 
@@ -354,6 +362,7 @@ class NoteTreeWidget(Tree):
         if not self.cursor_node:
             return
 
+        self.note_tree.push_undo(self.cursor_node._node.parent)
         self.note_tree.delete_focus_node(self.cursor_node._node)
 
         parent_widget = self.cursor_node.parent
@@ -377,6 +386,7 @@ class NoteTreeWidget(Tree):
         if not self.cursor_node:
             return
 
+        self.note_tree.push_undo(self.cursor_node._node.parent or self.cursor_node._node)
         _node = self.note_tree.contextual_add_new_note(self.cursor_node._node)
         self.render()
 
@@ -392,6 +402,7 @@ class NoteTreeWidget(Tree):
             and self.cursor_node._node
         ):
             _node = self.cursor_node._node
+            self.note_tree.push_undo(_node.parent)
             self.note_tree.move_line(_node, direction=direction)
             parent_widget = self.cursor_node.parent
             if parent_widget is None or parent_widget.parent is None:
@@ -491,6 +502,16 @@ class NoteTreeWidget(Tree):
         logging.info("SAVING")
         self.note_tree.save()
         self.app.status_bar.needs_saving = self.note_tree.has_unsaved_operations
+
+    def action_undo(self):
+        if self.note_tree.pop_undo():
+            self.render()
+            self.move_cursor_to_line(0)
+
+    def action_redo(self):
+        if self.note_tree.pop_redo():
+            self.render()
+            self.move_cursor_to_line(0)
 
     def add_journal_entry(self, text):
         new_node = self.note_tree.add_journal_entry(text)

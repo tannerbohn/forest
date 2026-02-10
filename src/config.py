@@ -8,6 +8,9 @@ DEFAULT_CONFIG = {
     "sound_effects_enabled": True,
     "default_theme": "forest",
     "log_level": "INFO",
+    "undo_depth": 50,
+    "auto_save": True,
+    "auto_save_interval": 5,
 }
 
 
@@ -73,3 +76,15 @@ class Config:
     @property
     def location(self):
         return self.get("location", None)
+
+    @property
+    def undo_depth(self):
+        return self.get("undo_depth", 50)
+
+    @property
+    def auto_save(self):
+        return self.get("auto_save", True)
+
+    @property
+    def auto_save_interval(self):
+        return self.get("auto_save_interval", 5)

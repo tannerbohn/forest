@@ -142,62 +142,70 @@
     ],
     [
         21,
-        "/intro.txt>ting notes>cles through highlight colours",
+        "/intro.txt>ting notes>through highlight colours #HL1",
         [
+            "collapsed",
             "2026-02-16"
         ]
     ],
     [
         22,
-        "/intro.txt>ting notes>ht colours>primary highlight #HL1",
+        "/intro.txt>ting notes>lours #HL1>primary highlight #HL1",
         [
             "2026-02-16"
         ]
     ],
     [
         23,
-        "/intro.txt>ting notes>ht colours>secondary #HL2",
+        "/intro.txt>ting notes>lours #HL1>secondary #HL2",
         [
             "2026-02-16"
         ]
     ],
     [
         24,
-        "/intro.txt>ting notes>ht colours>tertiary #HL3",
+        "/intro.txt>ting notes>lours #HL1>tertiary #HL3",
         [
             "2026-02-16"
         ]
     ],
     [
         25,
-        "/intro.txt>ting notes>z to undo, Z to redo",
+        "/intro.txt>ting notes>z to undo, Z to redo #HL2",
         [
             "2026-02-16"
         ]
     ],
     [
         26,
-        "/intro.txt>Saving",
+        "/intro.txt>ting notes>ith the current timestamp #HL3",
         [
             "2026-02-16"
         ]
     ],
     [
         27,
-        "/intro.txt>Saving>ed\" will appear in the top bar",
+        "/intro.txt>Saving",
         [
             "2026-02-16"
         ]
     ],
     [
         28,
-        "/intro.txt>Saving>ave is also enabled by default",
+        "/intro.txt>Saving>ed\" will appear in the top bar",
         [
             "2026-02-16"
         ]
     ],
     [
         29,
+        "/intro.txt>Saving>ave is also enabled by default",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        30,
         "/intro.txt>ommand mode (press : to enter)",
         [
             [
@@ -208,21 +216,21 @@
         ]
     ],
     [
-        30,
+        31,
         "/intro.txt> to enter)>earches the whole tree (regex)",
         [
             "2026-02-16"
         ]
     ],
     [
-        31,
+        32,
         "/intro.txt> to enter)>ee (regex)>Enter to accept, Esc to cancel",
         [
             "2026-02-16"
         ]
     ],
     [
-        32,
+        33,
         "/intro.txt> to enter)>ee (regex)>light on the context node #HL1",
         [
             "collapsed",
@@ -230,38 +238,31 @@
         ]
     ],
     [
-        33,
+        34,
         "/intro.txt> to enter)>ee (regex)> node #HL1>you press ` while at that note",
         [
             "2026-02-17"
         ]
     ],
     [
-        34,
+        35,
         "/intro.txt> to enter)>ee (regex)>n toggles #DONE (second press)",
         [
             "2026-02-16"
         ]
     ],
     [
-        35,
+        36,
         "/intro.txt> to enter)>ee (regex)>ings, not just the note string",
         [
             "2026-02-16"
         ]
     ],
     [
-        36,
+        37,
         "/intro.txt> to enter)>ee (regex)>current note in the side panel",
         [
             "2026-02-16"
-        ]
-    ],
-    [
-        37,
-        "/intro.txt> to enter)>ee (regex)>side panel>ump to one of the listed notes",
-        [
-            "2026-02-17"
         ]
     ],
     [
@@ -294,88 +295,83 @@
         41,
         "/intro.txt> to enter)>rrent note> of 10 bookmarks are supported",
         [
+            "collapsed",
             "2026-02-16"
         ]
     ],
     [
         42,
+        "/intro.txt> to enter)>rrent note> supported>e least recently used bookmark",
+        [
+            "2026-02-17"
+        ]
+    ],
+    [
+        43,
         "/intro.txt> to enter)>, organized by year and month)",
         [
             "2026-02-16"
         ]
     ],
     [
-        43,
+        44,
         "/intro.txt> to enter)>or follows [[PATH]] references",
         [
+            "collapsed",
             "2026-02-16"
         ]
     ],
     [
-        44,
+        45,
         "/intro.txt> to enter)>references>[[SAVING > AUTO-SAVE IS ALSO]]",
         [
             "2026-02-16"
         ]
     ],
     [
-        45,
+        46,
         "/intro.txt> to enter)>references>xist, use :run 0, :run 1, etc.",
         [
             "2026-02-16"
         ]
     ],
     [
-        46,
+        47,
         "/intro.txt> to enter)> a predefined template subtree",
         [
             "2026-02-16"
         ]
     ],
     [
-        47,
+        48,
         "/intro.txt> to enter)>:help shows the help panel",
         [
             "2026-02-16"
         ]
     ],
     [
-        48,
+        49,
         "/intro.txt>Side panel",
         [
             "2026-02-16"
         ]
     ],
     [
-        49,
+        50,
         "/intro.txt>Side panel>rks, similar notes) or hide it",
         [
             "2026-02-16"
         ]
     ],
     [
-        50,
-        "/intro.txt>Input substitutions",
-        [
-            "2026-02-16"
-        ]
-    ],
-    [
         51,
-        "/intro.txt>stitutions>ced with the current timestamp",
-        [
-            "2026-02-16"
-        ]
-    ],
-    [
-        52,
         "/intro.txt>he coloured strip on the left?",
         [
             "2026-02-16"
         ]
     ],
     [
-        53,
+        52,
         "/intro.txt> the left?>hey get older they slowly fade",
         [
             "2026-02-16"

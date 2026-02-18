@@ -14,15 +14,8 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.suggester import Suggester, SuggestFromList
 from textual.theme import Theme
-from textual.widgets import (
-    DataTable,
-    Footer,
-    Input,
-    Markdown,
-    ProgressBar,
-    Static,
-    Tree,
-)
+from textual.widgets import (DataTable, Footer, Input, Markdown, ProgressBar,
+                             Static, Tree)
 
 from config import Config
 from node import Node
@@ -31,13 +24,9 @@ from note_tree_widget import NoteTreeWidget
 from subtrees import SUBTREES
 from themes import THEMES
 from timer import Timer
-from utils import (
-    apply_input_substitutions,
-    compose_clock_notify_contents,
-    determine_state_filename,
-    extract_path_references,
-    play_sound_effect,
-)
+from utils import (apply_input_substitutions, compose_clock_notify_contents,
+                   determine_state_filename, extract_path_references,
+                   play_sound_effect)
 
 # ============================================================================
 # CONFIGURATION
@@ -166,7 +155,9 @@ class StatusBar(Static):
 class InfoWidget(DataTable):
     mode_index = 0
     mode_options = [None, "bookmarks", "perpetual_journal"]
-    similar_notes_results = []  # list of match nodes when similar notes panel is shown
+    _search_results = []  # list of match nodes when search panel is shown
+    _search_highlight_index = 0
+    _pre_search_mode_index = 0  # panel mode to restore after search exits
 
     def on_mount(self):
         """Initialize the DataTable with columns to prevent first-render issues."""
@@ -197,7 +188,7 @@ class InfoWidget(DataTable):
     def show_help(self):
         """Display help information without adding to the cycle."""
         logging.info("show_help called")
-        self.similar_notes_results = []
+        self._search_results = []
         # Set mode_index to last position so next cycle wraps to 0 (None/hidden)
         self.mode_index = len(self.mode_options) - 1
         self.display = True
@@ -223,7 +214,8 @@ class InfoWidget(DataTable):
                 ["u/d", "Move note up/down"],
                 ["tab/S-tab", "Indent/deindent"],
                 ["h", "Cycle highlight"],
-                ["x", "Toggle #DONE (or remove highlight)"],
+                ["x", "Toggle #DONE"],
+                ["", "(or remove pinned highlight)"],
                 ["X", "Toggle hiding #DONE notes"],
                 ["z/Z", "Undo/redo"],
                 ["", ""],
@@ -231,12 +223,12 @@ class InfoWidget(DataTable):
                 [":", "Command mode"],
                 [":b or :bookmark", "Toggle bookmark"],
                 [":j+ <text>", "Add journal entry"],
-                [":?<query>", "Search in context (regex)"],
-                [":??<query>", "Search globally (regex)"],
-                [":? (empty)", "Show similar notes"],
+                [":? <query regex>", "Search in context"],
+                [":?? <query regex>", "Search globally"],
+                ["", "(empty query to find similar)"],
                 ["H (in :? search)", "Pin highlight on context"],
                 [":insert <name>", "Insert template"],
-                [":run [<idx>]", "Run ! cmd or follow [[path]]"],
+                [":run [<idx>]", "Run ! cmd or follow [[PATH]]"],
                 [":help", "Show this help"],
                 ["", ""],
                 ["", Text.from_markup("[b]Other[/b]")],
@@ -250,79 +242,108 @@ class InfoWidget(DataTable):
         self.add_rows(table_rows)
         self.refresh()
 
-    def show_similar_notes(self):
-        """Display similar notes panel (triggered by empty :? search)."""
-        logging.info("show_similar_notes called")
-        self.mode_index = len(self.mode_options) - 1
+    def show_search_results(self, matches, query="", current_index=0):
+        """Display search results in panel with current match highlighted."""
+        logging.info(
+            f"show_search_results called with {len(matches)} matches, query={query!r}"
+        )
+        self._pre_search_mode_index = self.mode_index
+        self._search_results = matches
+        self._search_highlight_index = current_index
         self.display = True
         self.show_header = False
-        self.similar_notes_results = []
 
+        self._render_search_rows(query)
+
+    def update_search_highlight(self, new_index):
+        """Update which row is highlighted in the search results panel."""
+        if not self._search_results:
+            return
+        self._search_highlight_index = new_index % len(self._search_results)
+        # Re-render the table with updated highlight
+        query = getattr(self, "_last_search_query", "")
+        self._render_search_rows(query)
+
+    def _render_search_rows(self, query=""):
+        """Render search results table rows with highlight on current index."""
+        self._last_search_query = query
+        matches = self._search_results
         width = min(self.app.size.width // 2, 60)
 
         table_rows = self._clock_rows()
 
-        cursor_node = self.app.note_tree_widget.cursor_node
-        if not cursor_node:
-            table_rows.extend(
+        header = f"Search: {query}" if query else "Similar Notes"
+        table_rows.extend(
+            [
+                ["", Text.from_markup(f"[white][b]{header}[/b][/white]")],
                 [
-                    ["", Text.from_markup("[white][b]Similar Notes[/b][/white]")],
-                    ["", ""],
-                    ["", "No note selected"],
-                ]
-            )
-        else:
-            node = cursor_node._node
-            results = self.app.note_tree.find_by_similarity(node)
-            # Filter and limit to 10 results
-            results = [(n, sim, d, ctx) for n, sim, d, ctx in results if sim >= 0.10][
-                :10
+                    "",
+                    Text.from_markup(
+                        f"[dim]{len(matches)} result{'s' if len(matches) != 1 else ''} - Use ↑/↓ to cycle[/dim]"
+                    ),
+                ],
+                ["", ""],
             ]
-            self.similar_notes_results = [
-                match_node for match_node, sim, lca_dist, in_context in results
-            ]
+        )
 
-            table_rows.extend(
-                [
-                    ["", Text.from_markup("[white][b]Similar Notes[/b][/white]")],
-                    ["", Text.from_markup("[dim](Press 0-9 to jump)[/dim]")],
-                    ["", ""],
-                    ["#", "Note"],
-                ]
+        # Track which DataTable row index corresponds to the highlighted match
+        highlight_row = None
+        max_text_width = max(width - 6, 10)
+
+        for idx, match_node in enumerate(matches):
+            is_current = idx == self._search_highlight_index
+
+            # Row 1: marker + node text
+            node_text = match_node.text
+            if len(node_text) > max_text_width:
+                node_text = node_text[: max_text_width - 1] + "…"
+
+            marker = (
+                Text.from_markup("❯")
+                if is_current
+                else Text.from_markup("[dim]›[/dim]")
             )
+            if is_current:
+                styled_text = Text.from_markup(f"[reverse]{node_text}[/reverse]")
+                highlight_row = len(table_rows)
+            else:
+                styled_text = Text.from_markup(f"{node_text}")
+            table_rows.append([marker, styled_text])
 
-            for idx, (match_node, sim, lca_dist, in_context) in enumerate(results):
-                label = f"{idx}"
+            # Row 2: ancestor path (first few parts, dim)
+            path_parts = match_node.get_path(include_self=False)[1:]  # skip root
+            if path_parts:
+                path_parts = path_parts[:3]  # show up to 3 ancestor parts
+                path_preview = " › ".join(path_parts)
+                if len(path_preview) > max_text_width:
+                    path_preview = path_preview[: max_text_width - 1] + "…"
+                table_rows.append(["", Text.from_markup(f"[dim]{path_preview}[/dim]")])
 
-                path_str = match_node.get_path_string(width=100)
-                if path_str:
-                    display_text = f"{path_str}"
-                else:
-                    display_text = (
-                        match_node.text[:49] + "…"
-                        if len(match_node.text) > 50
-                        else match_node.text
-                    )
-
-                max_text_width = max(width - 14, 10)
-                lines = textwrap.wrap(display_text, max_text_width) or [display_text]
-                for i_l, line in enumerate(lines):
-                    if in_context:
-                        styled_line = Text.from_markup(f"{line}")
-                    else:
-                        styled_line = Text.from_markup(f"[dim]{line}[/dim]")
-                    table_rows.append([label if i_l == 0 else "", styled_line])
-
-            if not results:
-                table_rows.append(["", "No similar notes found"])
+        if not matches:
+            table_rows.append(["", "No results found"])
 
         self.clear(columns=True)
         self.add_columns("", "")
         self.add_rows(table_rows)
+
+        # Scroll to keep highlighted row visible
+        if highlight_row is not None:
+            try:
+                self.move_cursor(row=highlight_row)
+            except Exception:
+                pass
+
         self.refresh()
 
+    def hide_search_results(self):
+        """Clear search results and restore previous panel mode."""
+        self._search_results = []
+        self._search_highlight_index = 0
+        self.mode_index = self._pre_search_mode_index
+        self.update_data()
+
     def update_data(self):
-        self.similar_notes_results = []
+        self._search_results = []
 
         mode = self.mode_options[self.mode_index]
         logging.info(f"update_data: mode = {mode}")
@@ -462,7 +483,7 @@ class MultiPurposeSuggester(Suggester):
         super().__init__()
         self.mode = mode  # "command" or "edit"
         if self.mode == "command":
-            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ?<query> | ??<query>"
+            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ? <query> | ?? <query>"
             # | <path hint>+ <text>
         else:
             self.placeholder = ""
@@ -503,43 +524,28 @@ class MultiPurposeSuggester(Suggester):
         if "run".startswith(value_lower):
             return "run"
 
-        if "timer".startswith(value_lower):
-            return "timer <duration> | timer cancel"
+        if "j+".startswith(value_lower):
+            return "j+ <journal entry text>"
 
-        if value_lower == "j":
-            return "j+ <text>"
-
-        if value_lower == "j+":
-            return "j+ <text>"
-
-        if value in ["?", "??"]:
-            return value + "<query>"
+        if value == "?":
+            return "? <local query regex> | ?? <global query regex> | (use empty query to find similar notes)"
+        if value == "??":
+            return "?? <global query regex> | (use empty query to find similar notes)"
 
         # Show example durations when user types "timer "
-        if value == "timer ":
+        if "timer ".startswith(value_lower):
             return "timer 5m | 25m | 1h | 5m 3x | cancel"
 
-        if value == "timer c":
+        if "timer cancel".startswith(value_lower):
             return "timer cancel"
 
         # Show and filter subtree options when user types "insert"
-        if value.startswith("insert"):
-            if value == "insert":
-                return "insert <name>"
-            elif value == "insert ":
-                subtree_names = " | ".join(sorted(SUBTREES.keys()))
-                return "insert " + subtree_names
-            else:
-                # Filter subtrees based on what's been typed
-                partial = value[7:].upper()  # Get text after "insert "
-                matching = [
-                    name for name in SUBTREES.keys() if name.startswith(partial)
-                ]
-                if matching:
-                    if len(matching) == 1:
-                        return "insert " + matching[0]
-                    else:
-                        return "insert " + " | ".join(sorted(matching))
+        if "insert ".startswith(value_lower) or value_lower.startswith("insert"):
+            # Filter subtrees based on what's been typed
+            partial = value[7:].upper()  # Get text after "insert "
+            matching = [name for name in SUBTREES.keys() if name.startswith(partial)]
+            if matching:
+                return "insert " + " | ".join(sorted(matching))
 
         return None
 
@@ -687,6 +693,7 @@ class ForestApp(App):
         )
 
         self.note_tree_widget.update_location(context_node=node.parent, line_node=node)
+        self.info_widget.update_search_highlight(self._search_index)
 
     def action_edit_note(self):
         # if the input widget already in use, stop
@@ -761,23 +768,37 @@ class ForestApp(App):
                 # Normalize path separators (handle both " › " and " > ")
                 query = query.replace(" › ", ">").replace(" > ", ">")
 
-                # Empty query: show similar notes panel instead
+                # Empty query: find similar notes
                 if not query:
-                    self.info_widget.show_similar_notes()
-                    self.input_widget.clear()
-                    self.input_widget.display = False
-                    self.note_tree_widget.focus()
-                    return
+                    cursor_node = self.note_tree_widget.cursor_node
+                    if not cursor_node:
+                        self.notify("No note selected.")
+                        self.input_widget.clear()
+                        self.input_widget.display = False
+                        self.note_tree_widget.focus()
+                        return
+                    node = cursor_node._node
+                    results = self.note_tree.find_by_similarity(node)
+                    results = [
+                        (n, sim, d, ctx) for n, sim, d, ctx in results if sim >= 0.10
+                    ]
+                    if not global_scope:
+                        results = [
+                            (n, sim, d, ctx) for n, sim, d, ctx in results if ctx
+                        ]
+                    matching_nodes = [n for n, sim, d, ctx in results]
+                    display_query = ""
+                else:
+                    # Enable path matching if query contains ">"
+                    match_path = ">" in query
+                    matching_nodes = self.note_tree.find_by_query(
+                        query,
+                        global_scope=global_scope,
+                        match_path=match_path,
+                        threshold=0.1,
+                    )[:20]
+                    display_query = query
 
-                # Enable path matching if query contains ">"
-                match_path = ">" in query
-
-                matching_nodes = self.note_tree.find_by_query(
-                    query,
-                    global_scope=global_scope,
-                    match_path=match_path,
-                    threshold=0.1,
-                )
                 if not matching_nodes:
                     self.notify("No search results found.")
                     self.input_widget.clear()
@@ -799,6 +820,7 @@ class ForestApp(App):
                         self.note_tree.context_node,
                         None,
                     )
+                self.info_widget.show_search_results(matching_nodes, display_query)
                 self.update_search_view()
 
             elif cmd_str in ["b", "bookmark"]:
@@ -930,10 +952,14 @@ class ForestApp(App):
                 self.note_tree_widget.action_deindent()
                 self.input_widget.focus()
         elif self._search_matches:
-            if event.key == "left":
+            if event.key == "up":
+                event.prevent_default()
+                event.stop()
                 self._search_index -= 1
                 self.update_search_view()
-            elif event.key == "right":
+            elif event.key == "down":
+                event.prevent_default()
+                event.stop()
                 self._search_index += 1
                 self.update_search_view()
             elif (
@@ -963,22 +989,11 @@ class ForestApp(App):
                         line_node=self._pre_search_position[1],
                     )
                 self._pre_search_position = (None, None)
+                self.info_widget.hide_search_results()
         elif event.key == "enter" and not self.input_widget.display:
             self.note_tree_widget.action_add_note()
         elif event.key in "0123456789":
-            idx = int(event.key)
-            if self.info_widget.similar_notes_results and idx < len(
-                self.info_widget.similar_notes_results
-            ):
-                target_node = self.info_widget.similar_notes_results[idx]
-                self.info_widget.similar_notes_results = []
-                self.info_widget.cycle_mode()  # hide panel
-                self.note_tree_widget.update_location(
-                    context_node=target_node.parent or target_node,
-                    line_node=target_node,
-                )
-            else:
-                self.note_tree_widget.visit_bookmark(idx)
+            self.note_tree_widget.visit_bookmark(int(event.key))
 
 
 if __name__ == "__main__":

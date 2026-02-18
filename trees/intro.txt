@@ -18,27 +18,28 @@
 	- Tab and Shift+Tab indent and de-indent a note
 	- Delete removes a note
 	- u and d move a note up or down among its siblings
-	- h cycles through highlight colours
+	- h cycles through highlight colours #HL1
 		- primary highlight #HL1
 		- secondary #HL2
 		- tertiary #HL3
-	- z to undo, Z to redo
+	- z to undo, Z to redo #HL2
+	- Typing {NOW } in a note will be replaced with the current timestamp #HL3
 - Saving
 	- Press s to save. If you have unsaved changes, "Modified" will appear in the top bar
 	- Auto-save is also enabled by default
 - Command mode (press : to enter)
 	- :?<query> searches within the current context (regex), :??<query> searches the whole tree (regex)
-		- Use left/right arrows to cycle through matches, Enter to accept, Esc to cancel
+		- Use up/down arrows to cycle through matches, Enter to accept, Esc to cancel
 		- While viewing LOCAL (:?) search results, press H to pin the highlight on the context node #HL1
 			- The [[Command mode]] node has a pinned context highlight for the term "search" -- you can see it listed under "Active Highlights" if you press ` while at that note
 		- Pressing x on a note with a contextual highlight removes it (first press), then toggles #DONE (second press)
 		- if ">" appears in the search query, searching will compare against path strings, not just the note string
-		- Empty query (:?) shows similar notes to current note in the side panel
-			- when this similar-notes panel is visible, you can use the keys 0-9 to jump to one of the listed notes
+		- An empty query (:? or :??) shows similar notes to current note in the side panel
 	- :b or :bookmark toggles a bookmark on the current note
 		- Press ` to open the side panel and see existing bookmarks
 		- Jump to a bookmark by pressing its number key (0-9)
 		- A maximum of 10 bookmarks are supported
+			- if all slots are filled in, a new bookmark will replace the least recently used bookmark
 	- :j+ <text> adds a timestamped journal entry (a journal branch is auto-created, organized by year and month)
 	- :run [<index>] runs ! shell commands or follows [[PATH]] references
 		- e.g. run the :run command on this note [[SAVING > AUTO-SAVE IS ALSO]]
@@ -47,7 +48,5 @@
 	- :help shows the help panel
 - Side panel
 	- Press ` to cycle through the side panel views (bookmarks, similar notes) or hide it
-- Input substitutions
-	- Typing {NOW } in a note will be replaced with the current timestamp
 - What's up with the coloured strip on the left?
 	- This strip reflects the age of a note. New notes are bright, and as they get older they slowly fade

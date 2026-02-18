@@ -15,275 +15,370 @@
     ],
     [
         3,
-        "/intro.txt>Moving around",
+        "/intro.txt>is Forest?>To exit Forest, press Ctrl-Q",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         4,
-        "/intro.txt>ing around>up and down",
+        "/intro.txt>Navigation",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         5,
-        "/intro.txt>ing around>ou want to focus on something)",
+        "/intro.txt>Navigation>n arrows to move between notes",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         6,
-        "/intro.txt>ing around> have saved any changes first!",
+        "/intro.txt>Navigation>focuses on the current branch)",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         7,
-        "/intro.txt>Creating new notes",
+        "/intro.txt>Navigation>pand on any note with children",
         [
-            "2024-01-22"
+            "collapsed",
+            "2026-02-16"
         ]
     ],
     [
         8,
-        "/intro.txt> new notes> below where you want the note",
+        "/intro.txt>Navigation>h children>ook! This branch is collapsed!",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         9,
-        "/intro.txt> new notes>tart to indent or de-indent it",
+        "/intro.txt>Navigation>h children>collapsed!>can have so many things inside",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         10,
+        "/intro.txt>Navigation>0-9 jumps to a bookmarked note",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        11,
+        "/intro.txt>Creating notes",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        12,
+        "/intro.txt>ting notes>dd a new note below the cursor",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        13,
+        "/intro.txt>ting notes>line to indent or de-indent it",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        14,
         "/intro.txt>#Editing notes",
         [
             "2024-01-22"
         ]
     ],
     [
-        11,
-        "/intro.txt>ting notes> Or Esc to cancel your changes",
-        [
-            "2024-01-22"
-        ]
-    ],
-    [
-        12,
-        "/intro.txt>ting notes> again to toggle status) #DONE",
-        [
-            "2024-01-22"
-        ]
-    ],
-    [
-        13,
-        "/intro.txt>ting notes>d de-indent: tab and shift+tab",
-        [
-            "2024-01-22"
-        ]
-    ],
-    [
-        14,
-        "/intro.txt>ting notes>te (currently no undo feature)",
-        [
-            "2024-01-22"
-        ]
-    ],
-    [
         15,
-        "/intro.txt>ting notes>mong its siblings, use u and d",
+        "/intro.txt>ting notes>er when done, or Esc to cancel",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         16,
-        "/intro.txt>ting notes>s to cycle through the options",
+        "/intro.txt>ting notes>e note and its children) #DONE",
         [
-            "2024-10-07"
+            "2026-02-16"
         ]
     ],
     [
         17,
-        "/intro.txt>ting notes>he options> primary highlight colour #HL1",
+        "/intro.txt>ting notes>ding all #DONE notes from view",
         [
-            "2024-10-07"
+            "2026-02-16"
         ]
     ],
     [
         18,
-        "/intro.txt>ting notes>he options>or yellow #HL2",
+        "/intro.txt>ting notes>ab indent and de-indent a note",
         [
-            "2024-10-07"
+            "2026-02-16"
         ]
     ],
     [
         19,
-        "/intro.txt>ting notes>he options>or orange #HL3",
+        "/intro.txt>ting notes>Delete removes a note",
         [
-            "2024-10-07"
+            "2026-02-16"
         ]
     ],
     [
         20,
-        "/intro.txt>ace on any note with children)",
+        "/intro.txt>ting notes> up or down among its siblings",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         21,
-        "/intro.txt> children)>ook! This branch is collapsed!",
+        "/intro.txt>ting notes>cles through highlight colours",
         [
-            "collapsed",
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         22,
-        "/intro.txt> children)>collapsed!>can have so many things inside",
+        "/intro.txt>ting notes>ht colours>primary highlight #HL1",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         23,
-        "/intro.txt>de (enter command mode with :)",
+        "/intro.txt>ting notes>ht colours>secondary #HL2",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         24,
-        "/intro.txt>de with :)>arching for a note: :? <query>",
+        "/intro.txt>ting notes>ht colours>tertiary #HL3",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         25,
-        "/intro.txt>de with :)>:? <query>>one within the current context",
+        "/intro.txt>ting notes>z to undo, Z to redo",
         [
-            "2024-05-19"
+            "2026-02-16"
         ]
     ],
     [
         26,
-        "/intro.txt>de with :)>:? <query>>is done through the whole tree",
+        "/intro.txt>Saving",
         [
-            "2024-05-19"
+            "2026-02-16"
         ]
     ],
     [
         27,
-        "/intro.txt>de with :)> Enter to choose where to stop",
+        "/intro.txt>Saving>ed\" will appear in the top bar",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         28,
-        "/intro.txt>de with :)>note (like this one), use \":b\"",
+        "/intro.txt>Saving>ave is also enabled by default",
         [
-            [
-                "bookmark",
-                0,
-                1765336572.475507
-            ],
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         29,
-        "/intro.txt>de with :)>, use \":b\">same key will hide this window",
+        "/intro.txt>ommand mode (press : to enter)",
         [
-            "2024-01-22"
+            [
+                "contextual_highlight",
+                "search"
+            ],
+            "2026-02-16"
         ]
     ],
     [
         30,
-        "/intro.txt>de with :)>, use \":b\"> of 10 bookmarks are supported",
+        "/intro.txt> to enter)>earches the whole tree (regex)",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         31,
-        "/intro.txt>de with :)>, use \":b\">th the bookmark (found with `)",
+        "/intro.txt> to enter)>ee (regex)>Enter to accept, Esc to cancel",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         32,
-        "/intro.txt>Saving changes (hit the s key)",
+        "/intro.txt> to enter)>ee (regex)>light on the context node #HL1",
         [
             "collapsed",
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         33,
-        "/intro.txt>the s key)>ed\" will appear in the top bar",
+        "/intro.txt> to enter)>ee (regex)> node #HL1>you press ` while at that note",
         [
-            "2025-11-24"
+            "2026-02-17"
         ]
     ],
     [
         34,
-        "/intro.txt>Using the journal",
+        "/intro.txt> to enter)>ee (regex)>n toggles #DONE (second press)",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         35,
-        "/intro.txt>he journal>y be created), use :j+ <entry>",
+        "/intro.txt> to enter)>ee (regex)>ings, not just the note string",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         36,
-        "/intro.txt>he journal>ranches for the year and month",
+        "/intro.txt> to enter)>ee (regex)>current note in the side panel",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         37,
-        "/intro.txt> white/blue strip on the left?",
+        "/intro.txt> to enter)>ee (regex)>side panel>ump to one of the listed notes",
         [
-            "2024-01-22"
+            "2026-02-17"
         ]
     ],
     [
         38,
-        "/intro.txt> the left?>t older, they will slowly fade",
+        "/intro.txt> to enter)>a bookmark on the current note",
         [
-            "2024-01-22"
+            [
+                "bookmark",
+                0,
+                1771294969.366997
+            ],
+            "2026-02-16"
         ]
     ],
     [
         39,
-        "/intro.txt>Executable notes",
+        "/intro.txt> to enter)>rrent note>nel and see existing bookmarks",
         [
-            "2024-01-22"
+            "2026-02-16"
         ]
     ],
     [
         40,
-        "/intro.txt>able notes>ents in a subprocess with :run",
+        "/intro.txt> to enter)>rrent note> pressing its number key (0-9)",
         [
-            "2024-01-22"
+            "2026-02-16"
+        ]
+    ],
+    [
+        41,
+        "/intro.txt> to enter)>rrent note> of 10 bookmarks are supported",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        42,
+        "/intro.txt> to enter)>, organized by year and month)",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        43,
+        "/intro.txt> to enter)>or follows [[PATH]] references",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        44,
+        "/intro.txt> to enter)>references>[[SAVING > AUTO-SAVE IS ALSO]]",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        45,
+        "/intro.txt> to enter)>references>xist, use :run 0, :run 1, etc.",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        46,
+        "/intro.txt> to enter)> a predefined template subtree",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        47,
+        "/intro.txt> to enter)>:help shows the help panel",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        48,
+        "/intro.txt>Side panel",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        49,
+        "/intro.txt>Side panel>rks, similar notes) or hide it",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        50,
+        "/intro.txt>Input substitutions",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        51,
+        "/intro.txt>stitutions>ced with the current timestamp",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        52,
+        "/intro.txt>he coloured strip on the left?",
+        [
+            "2026-02-16"
+        ]
+    ],
+    [
+        53,
+        "/intro.txt> the left?>hey get older they slowly fade",
+        [
+            "2026-02-16"
         ]
     ]
 ]

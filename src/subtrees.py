@@ -84,6 +84,16 @@ SUBTREES["FLOW"] = {
     "> Induction: manufacture flow in a nearby current to induce flow in the target one": None,
 }
 
+SUBTREES["WELCOME"] = {
+    "Welcome to Forest! Press Space to expand this node.": {
+        "Press Enter to create a new note": None,
+        "Press Tab to nest a note under the one above it": None,
+        "Press Space to collapse this node again": None,
+        "Press : for more commands, and :help for the full list": None,
+        "Delete these notes anytime - they're just here to help you get started!": None,
+    }
+}
+
 # morning mental battery:
 #  - find a noun for each letter of the alphabet
 #  - math questions (randomly generate)

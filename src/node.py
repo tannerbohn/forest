@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 
 from pytimeparse import parse
 
-# from encryption_manager import encryption_manager
 logger = logging.getLogger(__name__)
 
 
@@ -17,6 +16,9 @@ class Node:
         self.children = []
         self.depth = depth
         self.is_collapsed = is_collapsed
+        self.contextual_highlight = (
+            None  # regex pattern for descendant text highlighting
+        )
 
         self.creation_time = datetime.now()
 
@@ -113,6 +115,18 @@ class Node:
 
         return parts[::-1]
 
+    def get_active_contextual_highlights(self):
+        """Walk up ancestors collecting all active contextual_highlight patterns.
+        Returns list with closest (self) first, preserving order, deduplicating."""
+        patterns = []
+        ancestor = self
+        while ancestor is not None:
+            if ancestor.contextual_highlight:
+                if ancestor.contextual_highlight not in patterns:
+                    patterns.append(ancestor.contextual_highlight)
+            ancestor = ancestor.parent
+        return patterns
+
     def get_path_string(self, width: int = 50):
         parts = self.get_path(include_self=True)[1:]
 
@@ -167,7 +181,7 @@ class Node:
         path_str = separator.join(truncated)
 
         if len(path_str) > width:
-            path_str = "…" + path_str[-(width - 1):]
+            path_str = "…" + path_str[-(width - 1) :]
         return path_str
 
     def is_done(self, consider_parent=True):
@@ -236,8 +250,6 @@ class Node:
         return (self.get_expiry() - datetime.now()).days
 
     def toggle_done(self):
-        # if encryption_manager.is_encrypted(self.text):
-        #     return
 
         words = self.text.split()
 
@@ -274,9 +286,6 @@ class Node:
             #   in which case, don't do anything
 
     def cycle_highlight(self):
-        # if encryption_manager.is_encrypted(self.text):
-        #     return
-
         words = self.text.split()
 
         if not self.is_highlighted():
@@ -294,33 +303,6 @@ class Node:
 
         self.text = " ".join(words)
 
-    # def cycle_expiry(self):
-    #     if encryption_manager.is_encrypted(self.text):
-    #         return
-
-    #     EXPIRY_OPTIONS = ["#T-1d", "#T-7d", "#T-30d"]
-
-    #     words = self.text.split()
-
-    #     if not self.is_self_deleting():
-    #         words.append(EXPIRY_OPTIONS[0])
-    #         dur = parse(EXPIRY_OPTIONS[0].split("-")[1])
-    #         self.expiry_datetime = datetime.now() + timedelta(seconds=dur)
-    #     else:
-    #         for w in words:
-    #             if w.startswith("#T-"):
-    #                 if w in EXPIRY_OPTIONS:
-    #                     self.expiry_datetime = None
-    #                     i = EXPIRY_OPTIONS.index(w)
-    #                     words.remove(w)
-    #                     if i < len(EXPIRY_OPTIONS) - 1:
-    #                         words.append(EXPIRY_OPTIONS[i+1])
-    #                         dur = parse(EXPIRY_OPTIONS[i+1].split("-")[1])
-    #                         self.expiry_datetime = datetime.now() + timedelta(seconds=dur)
-    #                 break  # if it's a custom expiry, leave it alone
-
-    #     self.text = " ".join(words)
-
     def get_days_old(self, recurse=False):
         days = (datetime.now() - self.creation_time).days
         if self.is_collapsed or recurse:
@@ -330,8 +312,6 @@ class Node:
 
     def get_text(self):
         text = self.text
-        # if encryption_manager.is_encrypted(self.text):
-        #     text = "█" * (len(self.text) // 5)
 
         if "#T-" in self.text:
             words = text.split()
@@ -516,25 +496,6 @@ class Node:
         self.extract_expiry()  # check if the expiry has changed
         self.extract_values()
 
-    # def encrypt(self, force=False):
-    #     already_encrypted = encryption_manager.is_encrypted(self.text)
-
-    #     if already_encrypted or "#ENCRYPT" in self.text or force:
-    #         if not already_encrypted:
-    #             self.text = encryption_manager.encrypt(self.text)
-    #         for c in self.children:
-    #             c.encrypt(force=True)
-    #     else:
-    #         for c in self.children:
-    #             c.encrypt()
-
-    # def decrypt(self):
-    #     already_decrypted = not encryption_manager.is_encrypted(self.text)
-    #     if not already_decrypted:
-    #         self.text = encryption_manager.decrypt(self.text)
-    #     for c in self.children:
-    #         c.decrypt()
-
     def run_command(self):
         # first check if there is a command -- indicated by .. !
         if not self.text.startswith("!"):
@@ -602,6 +563,32 @@ class Node:
     def check_well_status(self) -> None:
         if self.is_done() and self.get_well_sort_value() > 0:
             self.toggle_done()
+
+
+def lca_distance(node_a, node_b):
+    """Compute the LCA (Lowest Common Ancestor) distance between two nodes.
+
+    Returns the total number of edges traversed: steps from node_a up to the
+    LCA plus steps from node_b up to the LCA.  E.g. shared parent = 2.
+    """
+    ancestors_a = {}
+    cur = node_a
+    steps = 0
+    while cur is not None:
+        ancestors_a[id(cur)] = steps
+        cur = cur.parent
+        steps += 1
+
+    cur = node_b
+    steps_b = 0
+    while cur is not None:
+        if id(cur) in ancestors_a:
+            return ancestors_a[id(cur)] + steps_b
+        cur = cur.parent
+        steps_b += 1
+
+    # No common ancestor (shouldn't happen in a single tree)
+    return float("inf")
 
 
 def extended_parse(input_str: str) -> int | None:

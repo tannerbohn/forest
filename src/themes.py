@@ -32,6 +32,7 @@ forest = Theme(
         "age-color-1": "#78715d",
         "age-color-2": "#2a261e",
         "age-column-bg": forest_bkg,  # indicator strip color for oldest notes
+        "find-text-bg": "#443520",  # warm brown background for :f matches
     },
 )
 
@@ -58,6 +59,7 @@ pine = Theme(
         "age-color-1": "#3f5627",
         "age-color-2": "#181a18",
         "age-column-bg": pine_bkg,  # indicator strip color for oldest notes
+        "find-text-bg": "#2a4028",  # green-tinted background for :f matches
     },
 )
 
@@ -85,6 +87,7 @@ coral = Theme(
         "age-color-1": "#087dae",
         "age-color-2": "#10475d",
         "age-column-bg": coral_bkg,  # indicator strip color for oldest notes
+        "find-text-bg": "#2d3d65",  # blue background for :f matches
     },
 )
 
@@ -114,6 +117,7 @@ verve = Theme(
         "age-color-1": "#31748f",  # Deep pine for mid-age
         "age-color-2": "#191724",  # Matching background for oldest notes
         "age-column-bg": "#191724",
+        "find-text-bg": "#3d3460",  # rich purple background for :f matches
     },
 )
 
@@ -145,6 +149,7 @@ forest_v2 = Theme(
         "age-color-1": "#6b5d45",  # aging bark
         "age-color-2": "#1a1610",  # fading into dark earth
         "age-column-bg": forest_v2_bkg,  # age strip background
+        "find-text-bg": "#4d4130",  # warm amber background for :f matches
     },
 )
 
@@ -178,6 +183,8 @@ TEXT_COLOR_REGEX_LIST = [
     (r"\b\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?\b", "dim"),
     (r"\*.*\*", "bold"),
     (r"^ (>.*)", "dim"),
+    (r"(\[\[.*?\]\])", "dim"),
+    # (r"(\[\[.*?\]\])", "u"),
     # (r"TODO|FIXME", "#ff0000"),  # Color TODO/FIXME red
     # (r"(?i)\b(What|How|Why|If|Could|Is)\b", "bold"),
 ]

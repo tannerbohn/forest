@@ -73,7 +73,8 @@ class NoteTreeWidget(Tree):
         self.auto_expand = False
 
         self.render()
-        self.move_cursor_to_line(0)
+        if self._tree_lines:
+            self.move_cursor_to_line(0)
 
     def get_first_widget_for_node(self, widget_node):
         """Get the first widget of a multiline node, or the widget itself if single-line."""
@@ -99,29 +100,50 @@ class NoteTreeWidget(Tree):
 
             is_bookmarked = self.note_tree.determine_if_bookmarked(_node)
 
-            if _node.is_collapsed:  # or is_cursor:
-                arrow_str = "[bold]≡[/bold]"  # "[bold]⁝[/bold]"  #≣ "≡" #"═" #"⯈" #"▶"
+            # Determine arrow character
+            if _node.is_collapsed:
+                if is_cursor:
+                    arrow_char = "⟫"#"≡"
+                else:
+                    arrow_char = "⟫" #"»" #"≡"
             else:
                 if is_cursor:
-                    arrow_str = "●" #"🞍"  # "⯐" #"•" #"━"
+                    if _node.contextual_highlight:
+                        arrow_char = "🟆"  # "🟐"  # "🟆"
+                    else:
+                        arrow_char = "❯"  # "►" #"•" #"●"
                 else:
-                    arrow_str = "🞌"  # "⋅" #"─" #"🢜" #"►"
+                    if _node.contextual_highlight:
+                        arrow_char = "🟆"  # "🟄" # "🞌"  # "⋅" #"─" #"🢜" #"►"
+                    else:
+                        arrow_char = "›"  #"🞌"
 
+            # Determine arrow color
+            # if _node.contextual_highlight:
+            #     tag = self.app.get_theme_variable_defaults().get("HL3") or "orange"
+            #     if _node.is_collapsed:
+            #         arrow_str = f"[bold {tag}]{arrow_char}[/bold {tag}]"
+            #     else:
+            #         arrow_str = f"[{tag}]{arrow_char}[/{tag}]"
+            # else:
             if is_cursor:
                 tag = (
                     self.app.get_theme_variable_defaults().get("cursor-arrow")
                     or "white"
                 )
-            # elif is_bookmarked:
-            # elif _node.is_collapsed:
-            # tag = self.app.get_theme_variable_defaults().get('HL3') or 'red'
             else:
-                tag = (
-                    self.app.get_theme_variable_defaults().get("default-arrow")
-                    or "white"
-                )
+                if _node.contextual_highlight:
+                    tag = self.app.get_theme_variable_defaults().get("HL3") or "orange"
+                else:
+                    tag = (
+                        self.app.get_theme_variable_defaults().get("default-arrow")
+                        or "white"
+                    )
 
-            arrow_str = f"[{tag}]{arrow_str}[/{tag}]"
+            if _node.is_collapsed:
+                arrow_str = f"[bold {tag}]{arrow_char}[/bold {tag}]"
+            else:
+                arrow_str = f"[{tag}]{arrow_char}[/{tag}]"
 
         # if _node.is_collapsed:
         #     text = text.replace("  ≣", "  [white]≣[/white]") #"[•••]", "[white][•••][/white]")
@@ -138,6 +160,24 @@ class NoteTreeWidget(Tree):
                     text = re.sub(pattern, f"[{formatting}]\\g<0>[/{formatting}]", text)
                 except re.error as e:
                     logging.error(f"Invalid regex pattern '{pattern}': {e}")
+
+            # contextual highlights from ancestor nodes
+            find_bg = self.app.get_theme_variable_defaults().get(
+                "find-text-bg", "#333333"
+            )
+            ancestor = _node
+            while ancestor is not None:
+                if ancestor.contextual_highlight:
+                    try:
+                        text = re.sub(
+                            ancestor.contextual_highlight,
+                            f"[on {find_bg}]\\g<0>[/on {find_bg}]",
+                            text,
+                            flags=re.IGNORECASE,
+                        )
+                    except re.error:
+                        pass
+                ancestor = ancestor.parent
 
             # highlighting (not visible if a note is #DONE)
             if _node.is_highlighted():
@@ -294,8 +334,19 @@ class NoteTreeWidget(Tree):
         if not self.cursor_node:
             return
 
-        self.note_tree.push_undo(self.cursor_node._node.parent)
-        self.cursor_node._node.toggle_done()
+        node = self.cursor_node._node
+
+        # If this node has a contextual highlight set directly on it, remove it first
+        if node.contextual_highlight:
+            self.note_tree.push_undo(node.parent)
+            node.contextual_highlight = None
+            self.note_tree.has_unsaved_operations = True
+            self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
+            return
+
+        # Otherwise, toggle DONE status
+        self.note_tree.push_undo(node.parent)
+        node.toggle_done()
         self.note_tree.has_unsaved_operations = True
         self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
 
@@ -351,7 +402,11 @@ class NoteTreeWidget(Tree):
 
         _node = self.cursor_node._node
         # Deindent moves node from parent to grandparent, so snapshot grandparent
-        undo_target = _node.parent.parent if _node.parent and _node.parent.parent else _node.parent
+        undo_target = (
+            _node.parent.parent
+            if _node.parent and _node.parent.parent
+            else _node.parent
+        )
         self.note_tree.push_undo(undo_target)
         self.note_tree.deindent(self.cursor_node._node)
         self.render()  # target_widget=self.cursor_node.parent.parent)
@@ -383,11 +438,13 @@ class NoteTreeWidget(Tree):
 
     def action_add_note(self):
 
-        if not self.cursor_node:
-            return
+        if self.cursor_node:
+            focus_node = self.cursor_node._node
+        else:
+            focus_node = self.note_tree.context_node
 
-        self.note_tree.push_undo(self.cursor_node._node.parent or self.cursor_node._node)
-        _node = self.note_tree.contextual_add_new_note(self.cursor_node._node)
+        self.note_tree.push_undo(focus_node.parent or focus_node)
+        _node = self.note_tree.contextual_add_new_note(focus_node)
         self.render()
 
         # initiate editing of the node

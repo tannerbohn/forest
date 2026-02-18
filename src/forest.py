@@ -14,8 +14,15 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.suggester import Suggester, SuggestFromList
 from textual.theme import Theme
-from textual.widgets import (DataTable, Footer, Input, Markdown, ProgressBar,
-                             Static, Tree)
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Input,
+    Markdown,
+    ProgressBar,
+    Static,
+    Tree,
+)
 
 from config import Config
 from node import Node
@@ -24,8 +31,13 @@ from note_tree_widget import NoteTreeWidget
 from subtrees import SUBTREES
 from themes import THEMES
 from timer import Timer
-from utils import (apply_input_substitutions, compose_clock_notify_contents,
-                   determine_state_filename, play_sound_effect)
+from utils import (
+    apply_input_substitutions,
+    compose_clock_notify_contents,
+    determine_state_filename,
+    extract_path_references,
+    play_sound_effect,
+)
 
 # ============================================================================
 # CONFIGURATION
@@ -90,11 +102,25 @@ class StatusBar(Static):
                 "🌲 "
                 + f"[{hl}][b]Search result {self.search_progress[0]+1}/{self.search_progress[1]}[/b][/{hl}] | "
             )
-            remaining_width = self.size.width - len(text.plain) - 1
+
+            # Show [f] hint for local searches only
+            hint_text = Text("")
+            if self.app._search_is_local and ">" not in self.app._search_query:
+                hint_text = Text.from_markup(f"[{hl}][H] to pin highlight[/{hl}]")
+
+            remaining_width = (
+                self.size.width - len(text.plain) - len(hint_text.plain) - 1
+            )
 
             context_path = self.context_node.get_path_string(width=remaining_width)
 
-            text = text + Text.from_markup(context_path)
+            remaining_width -= len(context_path)
+
+            text = (
+                text
+                + Text.from_markup(context_path + " " * remaining_width)
+                + hint_text
+            )
         else:
             start_text = Text.from_markup("🌲 ")
 
@@ -140,6 +166,12 @@ class StatusBar(Static):
 class InfoWidget(DataTable):
     mode_index = 0
     mode_options = [None, "bookmarks", "perpetual_journal"]
+    similar_notes_results = []  # list of match nodes when similar notes panel is shown
+
+    def on_mount(self):
+        """Initialize the DataTable with columns to prevent first-render issues."""
+        self.add_columns("", "")
+        self.show_header = True
 
     def cycle_mode(self):
         old_index = self.mode_index
@@ -149,51 +181,140 @@ class InfoWidget(DataTable):
         )
         self.update_data()
 
+    def _clock_rows(self):
+        """Return dim clock/date rows for appending to any panel."""
+        title, body = compose_clock_notify_contents(
+            getattr(self.app.config, "location", None)
+        )
+        rows = [
+            ["", Text.from_markup(f"[italic][dim]{title} - {body}[/dim][/italic]")],
+            ["", ""],
+        ]
+        # for line in body.split("\n"):
+        #     rows.append(["", Text.from_markup(f"[dim]{line}[/dim]")])
+        return rows
+
     def show_help(self):
         """Display help information without adding to the cycle."""
         logging.info("show_help called")
+        self.similar_notes_results = []
         # Set mode_index to last position so next cycle wraps to 0 (None/hidden)
         self.mode_index = len(self.mode_options) - 1
         self.display = True
         self.show_header = False
 
-        table_rows = [
-            ["", Text.from_markup("[white][b]Forest Help[/b][/white]")],
-            ["", Text.from_markup("[dim](Press ` to hide)[/dim]")],
-            ["", ""],
-            ["", Text.from_markup("[b]Navigation[/b]")],
-            ["←/→", "Zoom out/in"],
-            ["space", "Toggle collapse"],
-            ["0-9", "Jump to bookmark"],
-            ["", ""],
-            ["", Text.from_markup("[b]Editing[/b]")],
-            ["e/bksp", "Edit note"],
-            ["enter", "Add new note"],
-            ["delete", "Delete note"],
-            ["u/d", "Move note up/down"],
-            ["tab/S-tab", "Indent/deindent"],
-            ["h", "Cycle highlight"],
-            ["x", "Toggle #DONE"],
-            ["X", "Toggle hiding #DONE notes"],
-            ["z/Z", "Undo/redo"],
-            ["", ""],
-            ["", Text.from_markup("[b]Commands[/b]")],
-            [":", "Command mode"],
-            [":b or :bookmark", "Toggle bookmark"],
-            [":sound", "Toggle sound effects"],
-            [":j+ <text>", "Add journal entry"],
-            [":<path hint>+ <text>", "Add entry to best path"],
-            ["", "(e.g. 'Places>LA+ bla')"],
-            [":?<query>", "Search in context"],
-            [":??<query>", "Search globally"],
-            [":insert <name>", "Insert template"],
-            [":run", "Run shell command"],
-            [":help", "Show this help"],
-            ["", ""],
-            ["", Text.from_markup("[b]Other[/b]")],
-            ["s", "Save"],
-            ["`", "Cycle side panel"],
-        ]
+        table_rows = self._clock_rows()
+
+        # remember to keep ForestApp.on_key up-to-date
+        table_rows.extend(
+            [
+                ["", Text.from_markup("[white][b]Forest Help[/b][/white]")],
+                ["", Text.from_markup("[dim](Press ` to hide)[/dim]")],
+                ["", ""],
+                ["", Text.from_markup("[b]Navigation[/b]")],
+                ["←/→", "Zoom out/in"],
+                ["space", "Toggle collapse"],
+                ["0-9", "Jump to bookmark"],
+                ["", ""],
+                ["", Text.from_markup("[b]Editing[/b]")],
+                ["e/bksp", "Edit note"],
+                ["enter", "Add new note"],
+                ["delete", "Delete note"],
+                ["u/d", "Move note up/down"],
+                ["tab/S-tab", "Indent/deindent"],
+                ["h", "Cycle highlight"],
+                ["x", "Toggle #DONE (or remove highlight)"],
+                ["X", "Toggle hiding #DONE notes"],
+                ["z/Z", "Undo/redo"],
+                ["", ""],
+                ["", Text.from_markup("[b]Commands[/b]")],
+                [":", "Command mode"],
+                [":b or :bookmark", "Toggle bookmark"],
+                [":j+ <text>", "Add journal entry"],
+                [":?<query>", "Search in context (regex)"],
+                [":??<query>", "Search globally (regex)"],
+                [":? (empty)", "Show similar notes"],
+                ["H (in :? search)", "Pin highlight on context"],
+                [":insert <name>", "Insert template"],
+                [":run [<idx>]", "Run ! cmd or follow [[path]]"],
+                [":help", "Show this help"],
+                ["", ""],
+                ["", Text.from_markup("[b]Other[/b]")],
+                ["s", "Save"],
+                ["`", "Cycle side panel"],
+            ]
+        )
+
+        self.clear(columns=True)
+        self.add_columns("", "")
+        self.add_rows(table_rows)
+        self.refresh()
+
+    def show_similar_notes(self):
+        """Display similar notes panel (triggered by empty :? search)."""
+        logging.info("show_similar_notes called")
+        self.mode_index = len(self.mode_options) - 1
+        self.display = True
+        self.show_header = False
+        self.similar_notes_results = []
+
+        width = min(self.app.size.width // 2, 60)
+
+        table_rows = self._clock_rows()
+
+        cursor_node = self.app.note_tree_widget.cursor_node
+        if not cursor_node:
+            table_rows.extend(
+                [
+                    ["", Text.from_markup("[white][b]Similar Notes[/b][/white]")],
+                    ["", ""],
+                    ["", "No note selected"],
+                ]
+            )
+        else:
+            node = cursor_node._node
+            results = self.app.note_tree.find_by_similarity(node)
+            # Filter and limit to 10 results
+            results = [(n, sim, d, ctx) for n, sim, d, ctx in results if sim >= 0.10][
+                :10
+            ]
+            self.similar_notes_results = [
+                match_node for match_node, sim, lca_dist, in_context in results
+            ]
+
+            table_rows.extend(
+                [
+                    ["", Text.from_markup("[white][b]Similar Notes[/b][/white]")],
+                    ["", Text.from_markup("[dim](Press 0-9 to jump)[/dim]")],
+                    ["", ""],
+                    ["#", "Note"],
+                ]
+            )
+
+            for idx, (match_node, sim, lca_dist, in_context) in enumerate(results):
+                label = f"{idx}"
+
+                path_str = match_node.get_path_string(width=100)
+                if path_str:
+                    display_text = f"{path_str}"
+                else:
+                    display_text = (
+                        match_node.text[:49] + "…"
+                        if len(match_node.text) > 50
+                        else match_node.text
+                    )
+
+                max_text_width = max(width - 14, 10)
+                lines = textwrap.wrap(display_text, max_text_width) or [display_text]
+                for i_l, line in enumerate(lines):
+                    if in_context:
+                        styled_line = Text.from_markup(f"{line}")
+                    else:
+                        styled_line = Text.from_markup(f"[dim]{line}[/dim]")
+                    table_rows.append([label if i_l == 0 else "", styled_line])
+
+            if not results:
+                table_rows.append(["", "No similar notes found"])
 
         self.clear(columns=True)
         self.add_columns("", "")
@@ -201,6 +322,7 @@ class InfoWidget(DataTable):
         self.refresh()
 
     def update_data(self):
+        self.similar_notes_results = []
 
         mode = self.mode_options[self.mode_index]
         logging.info(f"update_data: mode = {mode}")
@@ -212,26 +334,53 @@ class InfoWidget(DataTable):
             return
 
         logging.info(f"update_data: showing widget, display = True")
+
         self.display = True
 
         width = min(self.app.size.width // 2, 60)
         # logging.info(f"Updating info widget with size: {self.size}")
 
+        table_rows = self._clock_rows()
+
         if mode == "bookmarks":
             logging.info("update_data: building bookmarks table")
             self.show_header = False
 
-            table_rows = [
-                ["", Text.from_markup("[white][b]Bookmarks[/b][/white]")],
-                ["", ""],
-                ["Key", "Note"],
-            ]
+            table_rows.extend(
+                [
+                    ["", Text.from_markup("[white][b]Bookmarks[/b][/white]")],
+                    ["", ""],
+                    ["Key", "Note"],
+                ]
+            )
 
             nb_bookmarks = 10
             for index in range(nb_bookmarks):
                 node = self.app.note_tree.bookmarks.get(index)
                 text = node.text if node else ""
                 table_rows.append([index, text])
+
+            # Add Active Highlights section
+            table_rows.extend(
+                [
+                    ["", ""],
+                    ["", Text.from_markup("[white][b]Active Highlights[/b][/white]")],
+                    ["", ""],
+                ]
+            )
+
+            # Get active highlights from cursor node
+            cursor_node = self.app.note_tree_widget.cursor_node
+            if cursor_node and hasattr(cursor_node, "_node"):
+                patterns = cursor_node._node.get_active_contextual_highlights()
+                if patterns:
+                    for pattern in patterns:
+                        table_rows.append(["🔍", pattern])
+                else:
+                    table_rows.append(["", Text.from_markup("[dim]None[/dim]")])
+            else:
+                table_rows.append(["", Text.from_markup("[dim]No node selected[/dim]")])
+
             self.clear(columns=True)
             self.add_columns("", "")
             self.add_rows(table_rows)  # [1:])
@@ -255,11 +404,13 @@ class InfoWidget(DataTable):
             )
             logging.info(f"Found matches: {node_matches}")
 
-            table_rows = [
-                ["", Text.from_markup("[white][b]On This Day[/b][/white]")],
-                ["", ""],
-                ["Date", "Entry"],
-            ]
+            table_rows.extend(
+                [
+                    ["", Text.from_markup("[white][b]On This Day[/b][/white]")],
+                    ["", ""],
+                    ["Date", "Entry"],
+                ]
+            )
             for node, match_str in node_matches:
                 text = node.text if node else ""
                 text = re.sub(date_regex, "", text).strip()
@@ -311,7 +462,8 @@ class MultiPurposeSuggester(Suggester):
         super().__init__()
         self.mode = mode  # "command" or "edit"
         if self.mode == "command":
-            self.placeholder = "help | bookmark | sound | clock | run | timer <duration> | insert <name> | j+ <text> | ?<query> | ??<query> | <path hint>+ <text>"
+            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ?<query> | ??<query>"
+            # | <path hint>+ <text>
         else:
             self.placeholder = ""
 
@@ -350,12 +502,6 @@ class MultiPurposeSuggester(Suggester):
 
         if "run".startswith(value_lower):
             return "run"
-
-        if "clock".startswith(value_lower):
-            return "clock"
-
-        if "sound".startswith(value_lower):
-            return "sound"
 
         if "timer".startswith(value_lower):
             return "timer <duration> | timer cancel"
@@ -467,6 +613,9 @@ class ForestApp(App):
         self._node_being_edited = None
         self._search_matches = []
         self._search_index = 0
+        self._search_query = ""
+        self._search_context_node = None
+        self._search_is_local = False
         self._pre_search_position = (None, None)
 
         self.sound_effects_enabled = self.config.sound_effects_enabled
@@ -574,10 +723,14 @@ class ForestApp(App):
             if new_text:
                 new_text = apply_input_substitutions(new_text)
 
-                self.note_tree.push_undo(self._node_being_edited._node.parent)
-                self._node_being_edited._node.text = new_text  # set_label(new_label)
-                self._node_being_edited._node.post_text_update()
+                node = self._node_being_edited._node
+                was_new_node = node.text == "NEW NODE"
+
+                self.note_tree.push_undo(node.parent)
+                node.text = new_text
+                node.post_text_update()
                 self.note_tree.has_unsaved_operations = True
+
                 self._node_being_edited = None
 
                 # input_widget.remove()
@@ -604,10 +757,36 @@ class ForestApp(App):
                 if cmd_str.startswith("??"):
                     global_scope = True
                 query = cmd_str.lstrip("? ")
-                matching_nodes = self.note_tree.find_matches(
-                    query, global_scope=global_scope
-                )
 
+                # Normalize path separators (handle both " › " and " > ")
+                query = query.replace(" › ", ">").replace(" > ", ">")
+
+                # Empty query: show similar notes panel instead
+                if not query:
+                    self.info_widget.show_similar_notes()
+                    self.input_widget.clear()
+                    self.input_widget.display = False
+                    self.note_tree_widget.focus()
+                    return
+
+                # Enable path matching if query contains ">"
+                match_path = ">" in query
+
+                matching_nodes = self.note_tree.find_by_query(
+                    query,
+                    global_scope=global_scope,
+                    match_path=match_path,
+                    threshold=0.1,
+                )
+                if not matching_nodes:
+                    self.notify("No search results found.")
+                    self.input_widget.clear()
+                    self.input_widget.display = False
+                    return
+
+                self._search_query = query
+                self._search_context_node = self.note_tree.context_node
+                self._search_is_local = not global_scope
                 self._search_matches = matching_nodes
                 self.status_bar.search_mode = True
                 try:
@@ -624,55 +803,95 @@ class ForestApp(App):
 
             elif cmd_str in ["b", "bookmark"]:
                 self.note_tree_widget.toggle_bookmark()
-            elif cmd_str == "sound":
-                self.sound_effects_enabled = not self.sound_effects_enabled
-                status = "enabled" if self.sound_effects_enabled else "disabled"
-                self.notify(f"Sound effects {status}")
             elif cmd_str == "help":
                 self.info_widget.show_help()
-            elif cmd_str in ["run"]:
-                try:
-                    logging.info("Running command")
-                    self.note_tree_widget.cursor_node._node.run_command()
-                except Exception as e:
-                    logging.error(f"Could not run command: {e}")
+            elif cmd_str == "run" or cmd_str.startswith("run "):
+                parts = cmd_str.split(maxsplit=1)
+                index = 0
+                if len(parts) > 1:
+                    try:
+                        index = int(parts[1])
+                    except ValueError:
+                        self.notify("Usage: :run or :run <index>")
+                        self.input_widget.clear()
+                        self.input_widget.display = False
+                        self.note_tree_widget.focus()
+                        return
+
+                if not self.note_tree_widget.cursor_node:
+                    self.notify("No note selected")
+                else:
+                    node = self.note_tree_widget.cursor_node._node
+                    if node.text.startswith("!"):
+                        try:
+                            logging.info("Running command")
+                            node.run_command()
+                        except Exception as e:
+                            logging.error(f"Could not run command: {e}")
+                    else:
+                        paths = extract_path_references(node.text)
+                        if paths:
+                            if index >= len(paths):
+                                self.notify(
+                                    f"Index {index} out of range (found {len(paths)} path(s))"
+                                )
+                            else:
+                                path_query = paths[index]
+                                path_query = path_query.replace(" › ", ">").replace(
+                                    " > ", ">"
+                                )
+                                matching_nodes = self.note_tree.find_by_query(
+                                    path_query, global_scope=True, match_path=True
+                                )
+                                # matching_nodes = [n for n in matching_nodes if n is not node]
+                                if matching_nodes:
+                                    target_node = matching_nodes[0]
+                                    self.note_tree_widget.update_location(
+                                        context_node=(
+                                            target_node.parent
+                                            if target_node.parent
+                                            else target_node
+                                        ),
+                                        line_node=target_node,
+                                    )
+                                else:
+                                    self.notify(f"No match found for: {path_query}")
+                        else:
+                            self.notify("No ! command or [[path]] reference found")
             elif cmd_str.startswith("insert "):
                 subtree_name = cmd_str.split(" ", 1)[-1]
                 self.note_tree_widget.add_subtree(subtree_name)
-            elif cmd_str == "clock":
-                title, body = compose_clock_notify_contents(self.config.location)
-                self.notify(body, title=title)
             elif cmd_str == "timer cancel":
                 self.timer.cancel()
             elif cmd_str.startswith("timer "):
                 duration_str = cmd_str[6:].strip()
                 self.timer.start(duration_str)
-            elif "+ " in cmd_str:
-                # Quick add: <location hint>+ <note text>
-                plus_idx = cmd_str.index("+ ")
-                hint_str = cmd_str[:plus_idx].strip()
-                note_text = cmd_str[plus_idx + 2 :].strip()
+            # elif "+ " in cmd_str:
+            #     # Quick add: <location hint>+ <note text>
+            #     plus_idx = cmd_str.index("+ ")
+            #     hint_str = cmd_str[:plus_idx].strip()
+            #     note_text = cmd_str[plus_idx + 2 :].strip()
 
-                if hint_str and note_text:
-                    matching_nodes = self.note_tree.find_matches(
-                        hint_str, global_scope=True, match_path=True
-                    )
-                    if matching_nodes:
-                        target_node = matching_nodes[0]
-                        self.note_tree.push_undo(target_node)
-                        note_text = apply_input_substitutions(note_text)
-                        new_node = target_node.add_child(note_text)
-                        self.note_tree.index_nodes()
-                        self.note_tree.update_visible_node_list()
-                        self.note_tree.has_unsaved_operations = True
+            #     if hint_str and note_text:
+            #         matching_nodes = self.note_tree.find_by_query(
+            #             hint_str, global_scope=True, match_path=True
+            #         )
+            #         if matching_nodes:
+            #             target_node = matching_nodes[0]
+            #             self.note_tree.push_undo(target_node)
+            #             note_text = apply_input_substitutions(note_text)
+            #             new_node = target_node.add_child(note_text)
+            #             self.note_tree.index_nodes()
+            #             self.note_tree.update_visible_node_list()
+            #             self.note_tree.has_unsaved_operations = True
 
-                        # self.note_tree_widget.update_location(
-                        #     context_node=target_node, line_node=new_node
-                        # )
-                        path_str = target_node.get_path_string(width=100)
-                        self.notify(f"Added to: {path_str}")
-                    else:
-                        self.notify("No matching node found")
+            #             # self.note_tree_widget.update_location(
+            #             #     context_node=target_node, line_node=new_node
+            #             # )
+            #             path_str = target_node.get_path_string(width=100)
+            #             self.notify(f"Added to: {path_str}")
+            #         else:
+            #             self.notify("No matching node found")
 
         self.input_widget.clear()
         self.input_widget.display = False
@@ -717,9 +936,26 @@ class ForestApp(App):
             elif event.key == "right":
                 self._search_index += 1
                 self.update_search_view()
+            elif (
+                event.key == "H"
+                and self._search_is_local
+                and self._search_query
+                and ">" not in self._search_query
+            ):
+                ctx = self._search_context_node
+                if ctx.contextual_highlight == self._search_query:
+                    ctx.contextual_highlight = None
+                else:
+                    ctx.contextual_highlight = self._search_query
+                    # self.note_tree.expand_nodes_matching(self._search_query, ctx)
+                self.note_tree.has_unsaved_operations = True
+                self.note_tree_widget.render()
             elif event.key in ["enter", "escape"]:
                 self._search_index = 0
                 self._search_matches = []
+                self._search_query = ""
+                self._search_context_node = None
+                self._search_is_local = False
                 self.status_bar.search_mode = False
                 if event.key == "escape":
                     self.note_tree_widget.update_location(
@@ -730,7 +966,19 @@ class ForestApp(App):
         elif event.key == "enter" and not self.input_widget.display:
             self.note_tree_widget.action_add_note()
         elif event.key in "0123456789":
-            self.note_tree_widget.visit_bookmark(int(event.key))
+            idx = int(event.key)
+            if self.info_widget.similar_notes_results and idx < len(
+                self.info_widget.similar_notes_results
+            ):
+                target_node = self.info_widget.similar_notes_results[idx]
+                self.info_widget.similar_notes_results = []
+                self.info_widget.cycle_mode()  # hide panel
+                self.note_tree_widget.update_location(
+                    context_node=target_node.parent or target_node,
+                    line_node=target_node,
+                )
+            else:
+                self.note_tree_widget.visit_bookmark(idx)
 
 
 if __name__ == "__main__":

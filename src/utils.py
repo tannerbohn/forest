@@ -64,8 +64,8 @@ def compose_clock_notify_contents(location=None):
     )
     days_remaining = total_days - day_of_year
 
-    body = now.strftime("%A, %B %d, %Y")
-    body += f"\n{year} is {100*day_of_year/total_days:.1f}% over."
+    body = now.strftime("%a, %b %d, %Y")
+    # body += f"\n{year} is {100*day_of_year/total_days:.1f}% over."
 
     # if location:
     #     title = f"{title} - {location}"
@@ -87,6 +87,15 @@ def compose_clock_notify_contents(location=None):
     #         logging.error(f"Failed to get weather: {e}")
 
     return title, body
+
+
+def extract_path_references(text: str) -> list[str]:
+    """Extract all ((path)) references from text.
+
+    Returns:
+        List of path strings found within (( ))
+    """
+    return re.findall(r"\[\[(.*?)\]\]", text)
 
 
 def apply_input_substitutions(text: str) -> str:

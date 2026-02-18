@@ -7,11 +7,16 @@ import textwrap
 import time
 from datetime import datetime
 
-# from encryption_manager import encryption_manager
-from node import Node
-from utils import (MONTH_ORDER, convert_to_nested_list,
-                   determine_state_filename, normalize_indentation,
-                   trigram_similarity)
+from node import Node, lca_distance
+from subtrees import SUBTREES
+from utils import (
+    MONTH_ORDER,
+    add_subtree,
+    convert_to_nested_list,
+    determine_state_filename,
+    normalize_indentation,
+    trigram_similarity,
+)
 
 # import pyclip
 
@@ -112,10 +117,19 @@ class NoteTree:
                                 self.bookmark_last_use_times[prop[1]] = (
                                     datetime.fromtimestamp(prop[2])
                                 )
+                            elif (
+                                isinstance(prop, list)
+                                and prop[0] == "contextual_highlight"
+                            ):
+                                matching_node.contextual_highlight = prop[1]
 
         for n in node_list:
             n.creation_time = creation_time_map.get(n.get_key(), datetime.now())
             # n.creation_time = creation_time_map.get(n.text[-30:], datetime.now())
+
+        if len(self.root.children) == 0:
+            add_subtree(self.root, SUBTREES["WELCOME"])
+            self.root.children[0].is_collapsed = True
 
         self.has_unsaved_operations = False
         self.context_node = context_node or self.root
@@ -126,11 +140,6 @@ class NoteTree:
         self._undo_depth = undo_depth
 
     def save(self):
-        # apply encryption where needed
-        # self.encrypt()
-
-        # self.remove_expired_notes()
-
         node_list = self.get_node_list(only_visible=False)
 
         states = []
@@ -157,6 +166,11 @@ class NoteTree:
                             last_use_time = self.bookmark_last_use_times[k].timestamp()
                             properties.append(("bookmark", k, last_use_time))
                             break
+
+                if node.contextual_highlight:
+                    properties.append(
+                        ("contextual_highlight", node.contextual_highlight)
+                    )
 
                 properties.append(node.creation_time.strftime("%Y-%m-%d"))
 
@@ -207,9 +221,9 @@ class NoteTree:
     def _make_snapshot(self, subtree_root):
         """Capture the subtree plus context node position for later restoration."""
         return {
-            'path': self._get_index_path(subtree_root),
-            'subtree': self._snapshot_subtree(subtree_root),
-            'context_path': self._get_index_path(self.context_node),
+            "path": self._get_index_path(subtree_root),
+            "subtree": self._snapshot_subtree(subtree_root),
+            "context_path": self._get_index_path(self.context_node),
         }
 
     def push_undo(self, subtree_root):
@@ -222,11 +236,11 @@ class NoteTree:
     def _swap_subtree(self, snapshot):
         """Replace the subtree at snapshot's path with the snapshot's copy.
         Returns a reverse snapshot of what was replaced (for the opposite stack)."""
-        path = snapshot['path']
+        path = snapshot["path"]
         current_node = self._resolve_index_path(path)
         reverse = self._make_snapshot(current_node)
 
-        restored = snapshot['subtree']
+        restored = snapshot["subtree"]
         if not path:
             # Restoring root
             self.root = restored
@@ -240,7 +254,7 @@ class NoteTree:
             restored.update_child_depth()
 
         # Restore context node via its saved index path
-        self.context_node = self._resolve_index_path(snapshot['context_path'])
+        self.context_node = self._resolve_index_path(snapshot["context_path"])
 
         self.index_nodes()
         self.update_visible_node_list()
@@ -461,38 +475,78 @@ class NoteTree:
     def determine_if_bookmarked(self, node: None):
         return node in self.bookmarks.values()
 
-    def find_matches(self, query, global_scope=True, match_path=False):
-        # find the node in the tree that best matches the query string
+    def update_wells(self) -> None:
+        # locate any well nodes and update children position and statuses
+        # TODO: if we last updated wells recently, skip? maybe do in separate thread?
+        # TODO: add corresponding logic to node.toggle_done() to update hashtags
+        well_roots = [n for n in self.get_node_list() if n.is_well_root()]
 
-        if global_scope:
-            node_list = self.get_node_list()
-        else:
-            node_list = self.context_node.get_node_list(
-                only_visible=False, hide_done=self.hide_done
+        for well_root in well_roots:
+            for node in well_root.children:
+                # get each node to see if the #DONE tag can be removed (if present)
+                node.check_well_status()
+
+            # sort nodes by... (now - resurface time)
+            well_root.children = sorted(
+                well_root.children, key=lambda n: -n.get_well_sort_value()
             )
 
-        matching_nodes = []
+    def _rank_nodes_by_similarity(
+        self,
+        query_text,
+        nodes,
+        text_fn=None,
+        coverage_weight=0.5,
+        threshold=0.05,
+        regex_prefilter=None,
+    ):
+        """Score and rank nodes by trigram similarity to query_text.
 
-        for n in node_list:
-            if match_path:
-                text = ">".join(n.get_path(include_self=True))
-            else:
-                text = n.text
+        The score is a blend of two trigram metrics (see trigram_similarity):
+          - **coverage**: what fraction of the query's trigrams appear in the
+            candidate.  High coverage means the candidate "contains" the query.
+          - **similarity**: Jaccard overlap of trigram sets.  High similarity
+            means the two texts are roughly the same length and content.
 
-            text = text.replace("-", " ").lower()  # remove dashes due to hashtags
-            score = trigram_similarity(text, query.lower(), coverage_weight=0.75)
-            if score:
-                matching_nodes.append((n, score))
+        coverage_weight controls the blend:
+          - High (e.g. 0.75): favour candidates that contain the query, even
+            if they are much longer.  Good for search-by-query, where a short
+            query should match inside long notes.
+          - Low / balanced (e.g. 0.5): penalise large length mismatches, so
+            a long note won't dominate just because it happens to contain the
+            query trigrams.  Good for "find me notes that say roughly the same
+            thing" (similarity discovery).
 
-        # sort nodes from best to worst
-        matching_nodes = sorted(matching_nodes, key=lambda el: -el[1])
-        if not matching_nodes:
-            return []
-        else:
-            top_score = matching_nodes[0][1]
-            matching_nodes = [n for n, s in matching_nodes if s >= top_score * 0.75]
+        Args:
+            query_text: The text to compare against (should be lowercase).
+            nodes: Iterable of Node objects to score.
+            text_fn: Callable(node) -> str to extract comparison text.
+                     Defaults to node.text.
+            coverage_weight: Blend between coverage (1.0) and Jaccard
+                             similarity (0.0).  See note above.
+            threshold: Minimum score to include.
+            regex_prefilter: If set, compiled regex. Nodes with short text
+                             (< 20 chars) that don't match are skipped.
 
-        return matching_nodes
+        Returns:
+            List of (node, score) tuples, sorted by score descending.
+        """
+        if text_fn is None:
+            text_fn = lambda n: n.text
+
+        scored = []
+        for node in nodes:
+            text = text_fn(node)
+            if regex_prefilter and len(text) < 20 and not regex_prefilter.search(text):
+                continue
+            score = trigram_similarity(
+                text.lower(), query_text, coverage_weight=coverage_weight
+            )
+            if score >= threshold:
+                scored.append((node, score))
+
+        scored.sort(key=lambda t: -t[1])
+        return scored
 
     def get_entries_matching_regex(
         self, regex_str: str, group_index=0
@@ -510,18 +564,94 @@ class NoteTree:
         matching_nodes = sorted(matching_nodes, key=lambda el: el[1])
         return matching_nodes
 
-    def update_wells(self) -> None:
-        # locate any well nodes and update children position and statuses
-        # TODO: if we last updated wells recently, skip? maybe do in separate thread?
-        # TODO: add corresponding logic to node.toggle_done() to update hashtags
-        well_roots = [n for n in self.get_node_list() if n.is_well_root()]
+    def find_by_query(self, query, global_scope=True, match_path=False, threshold=0.05):
+        """User-initiated search (:? and :?? commands, and :run path resolution).
 
-        for well_root in well_roots:
-            for node in well_root.children:
-                # get each node to see if the #DONE tag can be removed (if present)
-                node.check_well_status()
+        Designed for the case where the user types a short query and expects
+        to find it *inside* longer notes.  Uses coverage_weight=0.75 so that
+        a note containing the query ranks high even if the note is much longer
+        than the query.  A regex prefilter fast-rejects very short notes that
+        don't literally contain the query pattern, avoiding false positives
+        from tiny texts whose few trigrams happen to overlap.
 
-            # sort nodes by... (now - resurface time)
-            well_root.children = sorted(
-                well_root.children, key=lambda n: -n.get_well_sort_value()
+        When match_path=True (triggered by ">" in the query, or :run following
+        a [[path]] reference), the full ancestor path of each node is scored
+        instead of just node.text.
+        """
+        try:
+            pattern = re.compile(query, re.IGNORECASE)
+        except re.error:
+            pattern = re.compile(re.escape(query), re.IGNORECASE)
+
+        if global_scope:
+            nodes = self.get_node_list()
+        else:
+            nodes = self.context_node.get_node_list(
+                only_visible=False, hide_done=self.hide_done
             )
+
+        if match_path:
+            text_fn = lambda n: ">".join(n.get_path(include_self=True)).replace(
+                "-", " "
+            )
+        else:
+            text_fn = lambda n: n.text.replace("-", " ")
+
+        ranked = self._rank_nodes_by_similarity(
+            query.lower(),
+            nodes,
+            text_fn=text_fn,
+            coverage_weight=0.75,
+            threshold=threshold,
+            regex_prefilter=pattern,
+        )
+        return [node for node, _score in ranked]
+
+    def find_by_similarity(self, target_node, n=10):
+        """Discovery of notes similar to a given note (empty :? command).
+
+        Unlike find_by_query, there is no short query being looked up inside
+        longer texts -- both sides are full-length notes, so we want a
+        symmetric comparison.  Uses coverage_weight=0.5 (balanced Jaccard) so
+        that a 200-word note doesn't dominate a 5-word note just because it
+        happens to contain the same trigrams.  No regex prefilter or threshold
+        is applied; instead we take the top *n* results regardless of score,
+        and let the caller decide a display cutoff.
+
+        Returns up to *n* tuples of:
+            (node, similarity, lca_distance, is_in_context)
+        sorted by similarity descending.  lca_distance and is_in_context are
+        metadata for display (dimming out-of-context results, etc.).
+        """
+        all_nodes = self.root.get_node_list(only_visible=False)
+        nodes = [
+            nd
+            for nd in all_nodes
+            if nd is not target_node
+            and nd is not self.root
+            and len(nd.text.strip()) >= 3
+        ]
+
+        ranked = self._rank_nodes_by_similarity(
+            target_node.text,
+            nodes,
+            coverage_weight=0.1,
+            threshold=0.0,
+        )[:n]
+
+        results = []
+        for node, sim in ranked:
+            dist = lca_distance(target_node, node)
+            in_context = any(
+                cur is self.context_node for cur in self._iter_ancestors(node)
+            )
+            results.append((node, sim, dist, in_context))
+        return results
+
+    @staticmethod
+    def _iter_ancestors(node):
+        """Yield node and all its ancestors."""
+        cur = node
+        while cur is not None:
+            yield cur
+            cur = cur.parent

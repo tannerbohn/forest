@@ -1,40 +1,53 @@
 - What is Forest?
-	- Forest is a note-taking/brainstorming interface made with Textual which is built around the idea of organizing notes into nested branches, and being able to zoom into branches
-- Moving around
-	- up and down
-	- left (move up in the tree), right (move deeper into the tree -- useful if you want to focus on something)
-	- to exit the forest, type Ctrl-Q. Make sure you have saved any changes first!
-- Creating new notes
-	- press Enter below where you want the note
-	- while typing the note text, you can type Tab or Shift+Tab at the line start to indent or de-indent it
+	- Forest is a note-taking/brainstorming interface made with Textual, built around the idea of organizing notes into nested branches and being able to zoom into branches
+	- To exit Forest, press Ctrl-Q
+- Navigation
+	- Up and down arrows to move between notes
+	- Left arrow zooms out (moves up in the tree), right arrow zooms in (focuses on the current branch)
+	- Space toggles collapse/expand on any note with children
+		- Look! This branch is collapsed!
+			- It can have so many things inside
+	- 0-9 jumps to a bookmarked note
+- Creating notes
+	- Press Enter to add a new note below the cursor
+	- While typing, you can press Tab or Shift+Tab at the start of the line to indent or de-indent it
 - #Editing notes
-	- press e or backspace to edit a note. Press Enter when you're done editing. Or Esc to cancel your changes
-	- marking as complete: x (this will also dim the children of the node. Press x again to toggle status) #DONE
-	- indent and de-indent: tab and shift+tab
-	- to delete a note, press delete (currently no undo feature)
-	- to move a note up or down among its siblings, use u and d
-	- Highlighting notes by pressing "h". Press multiple times to cycle through the options
-		- they can be this primary highlight colour #HL1
-		- or yellow #HL2
-		- or orange #HL3
-- Collapsing (press space on any note with children)
-	- Look! This branch is collapsed!
-		- It can have so many things inside
-- Command mode (enter command mode with :)
-	- searching for a note: :? <query>
-		- If a single ? is used, searching is done within the current context
-		- If ?? is used, searching is done through the whole tree
-	- When cycling through matches, press Enter to choose where to stop
-	- to bookmark a note (like this one), use ":b"
-		- to see existing bookmarks, type `. Hitting the same key will hide this window
-		- a maximum of 10 bookmarks are supported
-		- to jump to a bookmark, hit the number key associated with the bookmark (found with `)
-- Saving changes (hit the s key)
-	- If you have unsaved changes, "Modified" will appear in the top bar
-- Using the journal
-	- to add a journal entry (a journal branch will automatically be created), use :j+ <entry>
-	- journal entries are automatically sorted into branches for the year and month
-- What's up with the white/blue strip on the left?
-	- This strip reflects the age of a note. New ones are bright blue, and as the get older, they will slowly fade
-- Executable notes
-	- if a note starts with "!", then you can execute the contents in a subprocess with :run
+	- Press e or Backspace to edit a note. Press Enter when done, or Esc to cancel
+	- x toggles a note as complete (dims the note and its children) #DONE
+	- X toggles hiding all #DONE notes from view
+	- Tab and Shift+Tab indent and de-indent a note
+	- Delete removes a note
+	- u and d move a note up or down among its siblings
+	- h cycles through highlight colours
+		- primary highlight #HL1
+		- secondary #HL2
+		- tertiary #HL3
+	- z to undo, Z to redo
+- Saving
+	- Press s to save. If you have unsaved changes, "Modified" will appear in the top bar
+	- Auto-save is also enabled by default
+- Command mode (press : to enter)
+	- :?<query> searches within the current context (regex), :??<query> searches the whole tree (regex)
+		- Use left/right arrows to cycle through matches, Enter to accept, Esc to cancel
+		- While viewing LOCAL (:?) search results, press H to pin the highlight on the context node #HL1
+			- The [[Command mode]] node has a pinned context highlight for the term "search" -- you can see it listed under "Active Highlights" if you press ` while at that note
+		- Pressing x on a note with a contextual highlight removes it (first press), then toggles #DONE (second press)
+		- if ">" appears in the search query, searching will compare against path strings, not just the note string
+		- Empty query (:?) shows similar notes to current note in the side panel
+			- when this similar-notes panel is visible, you can use the keys 0-9 to jump to one of the listed notes
+	- :b or :bookmark toggles a bookmark on the current note
+		- Press ` to open the side panel and see existing bookmarks
+		- Jump to a bookmark by pressing its number key (0-9)
+		- A maximum of 10 bookmarks are supported
+	- :j+ <text> adds a timestamped journal entry (a journal branch is auto-created, organized by year and month)
+	- :run [<index>] runs ! shell commands or follows [[PATH]] references
+		- e.g. run the :run command on this note [[SAVING > AUTO-SAVE IS ALSO]]
+		- If multiple [[PATH]] references exist, use :run 0, :run 1, etc.
+	- :insert <name> inserts a predefined template subtree
+	- :help shows the help panel
+- Side panel
+	- Press ` to cycle through the side panel views (bookmarks, similar notes) or hide it
+- Input substitutions
+	- Typing {NOW } in a note will be replaced with the current timestamp
+- What's up with the coloured strip on the left?
+	- This strip reflects the age of a note. New notes are bright, and as they get older they slowly fade

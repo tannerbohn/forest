@@ -1,6 +1,8 @@
 # forest
 A minimal tree-based note interface made with love.
 
+Written for Python3.10.
+
 <p align="center">
   <img src="assets/screenshot.png" title="Forest">
 </p>

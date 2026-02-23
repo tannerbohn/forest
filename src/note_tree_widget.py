@@ -37,6 +37,8 @@ class NoteTreeWidget(Tree):
         Binding("d", "move_node('down')", "Move down", show=False),
         Binding("z", "undo()", "Undo", show=False),
         Binding("Z", "redo()", "Redo", show=False),
+        Binding("c", "cut_node()", "Cut", show=False),
+        Binding("v", "paste_node()", "Paste", show=False),
     ]
 
     def __init__(self, note_tree: NoteTree, id: str):
@@ -56,6 +58,7 @@ class NoteTreeWidget(Tree):
         self.ICON_NODE = ""
 
         self._last_cursor = None
+        self._cut_node = None
 
         self.age_gradient = Gradient((0, "red"), (1, "black"))
 
@@ -103,9 +106,9 @@ class NoteTreeWidget(Tree):
             # Determine arrow character
             if _node.is_collapsed:
                 if is_cursor:
-                    arrow_char = "⟫"#"≡"
+                    arrow_char = "⟫"  # "≡"
                 else:
-                    arrow_char = "⟫" #"»" #"≡"
+                    arrow_char = "⟫"  # "»" #"≡"
             else:
                 if is_cursor:
                     if _node.contextual_highlight:
@@ -116,7 +119,7 @@ class NoteTreeWidget(Tree):
                     if _node.contextual_highlight:
                         arrow_char = "🟆"  # "🟄" # "🞌"  # "⋅" #"─" #"🢜" #"►"
                     else:
-                        arrow_char = "›"  #"🞌"
+                        arrow_char = "›"  # "🞌"
 
             # Determine arrow color
             # if _node.contextual_highlight:
@@ -467,6 +470,37 @@ class NoteTreeWidget(Tree):
             else:
                 self.render(target_widget=parent_widget)
             self._fix_cursor_position(_node)
+
+    def action_cut_node(self):
+        if self._cut_node:
+            self._cut_node = None
+            self.app.status_bar.cut_node_text = ""
+            return
+        if not self.cursor_node or not hasattr(self.cursor_node, "_node"):
+            return
+        node = self.cursor_node._node
+        if not node.parent:
+            return
+        self._cut_node = node
+        truncated = node.text[:40] + ("..." if len(node.text) > 40 else "")
+        self.app.status_bar.cut_node_text = truncated
+
+    def action_paste_node(self):
+        if not self._cut_node or not self.cursor_node:
+            return
+        destination = self.cursor_node._node
+        if destination == self._cut_node:
+            return
+        self.note_tree.push_undo(self._cut_node.parent)
+        self.note_tree.push_undo(destination)
+        destination.paste_node_here(self._cut_node)
+        self.note_tree.index_nodes()
+        self.note_tree.has_unsaved_operations = True
+        pasted_node = self._cut_node
+        self._cut_node = None
+        self.app.status_bar.cut_node_text = ""
+        self.render()
+        self._fix_cursor_position(pasted_node)
 
     def on_resize(self, event) -> None:
         new_size = event.size

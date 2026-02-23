@@ -22,8 +22,9 @@
 		- primary highlight #HL1
 		- secondary #HL2
 		- tertiary #HL3
-	- z to undo, Z to redo #HL2
-	- Typing {NOW } in a note will be replaced with the current timestamp #HL3
+	- c to cut a note, v to paste it after the cursor. Press c again to cancel the cut #HL2
+	- z to undo, Z to redo #HL3
+	- Typing {NOW } in a note will be replaced with the current timestamp
 - Saving
 	- Press s to save. If you have unsaved changes, "Modified" will appear in the top bar
 	- Auto-save is also enabled by default

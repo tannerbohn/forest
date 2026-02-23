@@ -88,7 +88,7 @@ class Node:
           even when multiple nearby notes might be identical
         """
         path = self.get_path(include_self=False)
-        return ">".join([p[-10:] for p in path] + [self.text[-30:]])
+        return ">".join([p[-10:] for p in path[1:]] + [self.text[-30:]])
 
     def get_hashtags(self):
         if not "#" in self.text:
@@ -362,6 +362,12 @@ class Node:
     def paste_node_here(self, node):
         if node == self:
             return
+        # Check that self is not a descendant of node (would create a cycle)
+        ancestor = self.parent
+        while ancestor:
+            if ancestor == node:
+                return
+            ancestor = ancestor.parent
         node.parent.children.remove(node)
 
         node.parent = self

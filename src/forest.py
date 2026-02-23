@@ -56,6 +56,7 @@ class StatusBar(Static):
     search_mode = reactive(False)
     search_progress = reactive((0, 0))
     timer_remaining = reactive(None)
+    cut_node_text = reactive("")
 
     def compose_content(self):
 
@@ -113,7 +114,21 @@ class StatusBar(Static):
         else:
             start_text = Text.from_markup("🌲 ")
 
-            end_text = timer_text + needs_saving_text + hide_done_text + progress_text
+            if self.cut_node_text:
+                hl_cut = self.app.get_theme_variable_defaults().get("HL3") or "red"
+                cut_text = Text.from_markup(
+                    f" [{hl_cut}]✀ {self.cut_node_text}[/{hl_cut}]"
+                )
+            else:
+                cut_text = Text("")
+
+            end_text = (
+                cut_text
+                + timer_text
+                + needs_saving_text
+                + hide_done_text
+                + progress_text
+            )
 
             remaining_width = max(
                 0,
@@ -148,6 +163,9 @@ class StatusBar(Static):
     def watch_timer_remaining(self, new_value):
         self.compose_content()
 
+    def watch_cut_node_text(self, new_value):
+        self.compose_content()
+
     def on_resize(self, event) -> None:
         self.compose_content()
 
@@ -177,8 +195,14 @@ class InfoWidget(DataTable):
         title, body = compose_clock_notify_contents(
             getattr(self.app.config, "location", None)
         )
+        hl = self.app.theme_variables["HL1"]
         rows = [
-            ["", Text.from_markup(f"[italic][dim]{title} - {body}[/dim][/italic]")],
+            [
+                "",
+                Text.from_markup(
+                    f"[italic][dim][{hl}]{title}[/{hl}] - {body}[/dim][/italic]"
+                ),
+            ],
             ["", ""],
         ]
         # for line in body.split("\n"):
@@ -217,6 +241,8 @@ class InfoWidget(DataTable):
                 ["x", "Toggle #DONE"],
                 ["", "(or remove pinned highlight)"],
                 ["X", "Toggle hiding #DONE notes"],
+                ["c", "Cut (press again to cancel)"],
+                ["v", "Paste after cursor"],
                 ["z/Z", "Undo/redo"],
                 ["", ""],
                 ["", Text.from_markup("[b]Commands[/b]")],

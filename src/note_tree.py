@@ -9,14 +9,9 @@ from datetime import datetime
 
 from node import Node, lca_distance
 from subtrees import SUBTREES
-from utils import (
-    MONTH_ORDER,
-    add_subtree,
-    convert_to_nested_list,
-    determine_state_filename,
-    normalize_indentation,
-    trigram_similarity,
-)
+from utils import (MONTH_ORDER, add_subtree, convert_to_nested_list,
+                   determine_state_filename, normalize_indentation,
+                   trigram_similarity)
 
 # import pyclip
 
@@ -85,47 +80,43 @@ class NoteTree:
             with open(self.state_filename, "r") as f:
                 state = json.load(f)
 
-                for index, key, properties in state:
-                    matching_node = None
-                    for prop in properties:
-                        if isinstance(prop, str) and re.match(
-                            r"\d{4}-\d{2}-\d{2}", prop
-                        ):
-                            creation_time_map[key] = datetime.strptime(prop, "%Y-%m-%d")
-                            continue
+                for entry in state:
+                    key, index = entry["k"], entry["i"]
 
-                        # TODO: improve the matching process?
-                        if not matching_node:
+                    # creation time — always present
+                    if "t" in entry:
+                        creation_time_map[key] = datetime.fromisoformat(entry["t"])
+
+                    matching_node = None
+                    if entry.get("c") or entry.get("x") or "b" in entry or "h" in entry:
+                        if index < len(node_list) and node_list[index].get_key() == key:
+                            matching_node = node_list[index]
+                        else:
                             for i in range(
                                 max(index - 15, 0),
                                 min(index + 15, len(node_list)),
                             ):
                                 node = node_list[i]
-                                if (
-                                    node.get_key() == key
-                                ):  # TODO: can store a mapping from i -> hash if this needs to be faster
-                                    # if node.text[-30:] == key:
+                                if node.get_key() == key:
                                     matching_node = node
                                     break
-                        if matching_node:
-                            if prop == "collapsed":
-                                matching_node.is_collapsed = True
-                            elif prop == "context":
-                                context_node = matching_node
-                            elif isinstance(prop, list) and prop[0] == "bookmark":
-                                self.bookmarks[prop[1]] = matching_node
-                                self.bookmark_last_use_times[prop[1]] = (
-                                    datetime.fromtimestamp(prop[2])
-                                )
-                            elif (
-                                isinstance(prop, list)
-                                and prop[0] == "contextual_highlight"
-                            ):
-                                matching_node.contextual_highlight = prop[1]
+
+                    if matching_node:
+                        if entry.get("c"):
+                            matching_node.is_collapsed = True
+                        if entry.get("x"):
+                            context_node = matching_node
+                        if "b" in entry:
+                            slot, last_used = entry["b"]
+                            self.bookmarks[slot] = matching_node
+                            self.bookmark_last_use_times[slot] = datetime.fromtimestamp(
+                                last_used
+                            )
+                        if "h" in entry:
+                            matching_node.contextual_highlight = entry["h"]
 
         for n in node_list:
             n.creation_time = creation_time_map.get(n.get_key(), datetime.now())
-            # n.creation_time = creation_time_map.get(n.text[-30:], datetime.now())
 
         if len(self.root.children) == 0:
             add_subtree(self.root, SUBTREES["WELCOME"])
@@ -140,9 +131,9 @@ class NoteTree:
         self._undo_depth = undo_depth
 
     def save(self):
-        node_list = self.get_node_list(only_visible=False)
+        node_list = self.root.get_node_list(only_visible=False, hide_done=False)
 
-        states = []
+        entries = []
 
         with open(self.filename, "w") as f:
             for i, node in enumerate(node_list):
@@ -152,33 +143,37 @@ class NoteTree:
                 text = ("\t" * (node.depth - 1)) + "- " + node.text
                 f.write(text + "\n")
 
-                properties = []
+                entry = {
+                    "k": node.get_key(),
+                    "i": i,
+                    "t": node.creation_time.isoformat(),
+                }
 
                 if node.is_collapsed:
-                    properties.append("collapsed")
+                    entry["c"] = 1
 
                 if node == self.context_node:
-                    properties.append("context")
+                    entry["x"] = 1
 
                 if node in self.bookmarks.values():
                     for k, _node in self.bookmarks.items():
                         if node == _node:
-                            last_use_time = self.bookmark_last_use_times[k].timestamp()
-                            properties.append(("bookmark", k, last_use_time))
+                            entry["b"] = [
+                                k,
+                                self.bookmark_last_use_times[k].timestamp(),
+                            ]
                             break
 
                 if node.contextual_highlight:
-                    properties.append(
-                        ("contextual_highlight", node.contextual_highlight)
-                    )
+                    entry["h"] = node.contextual_highlight
 
-                properties.append(node.creation_time.strftime("%Y-%m-%d"))
+                entries.append(entry)
 
-                # states.append((i, node.text[-30:], properties))
-                states.append((i, node.get_key(), properties))
-
+        # ensure for readability that each note gets its own line in the json file
         with open(self.state_filename, "w") as f:
-            json.dump(states, f, indent=4, default=str)
+            f.write("[\n")
+            f.write(",\n".join(json.dumps(e) for e in entries))
+            f.write("\n]")
 
         self.has_unsaved_operations = False
 
@@ -395,20 +390,26 @@ class NoteTree:
         year = str(now.year)
         month = now.strftime("%B")
 
-        years = [c.text.split()[0] for c in self.journal.children]
-        if not year in years:
+        # scan all descendants of journal (bottom-up) to find year node at any depth
+        def collect_descendants(node):
+            result = []
+            for child in node.children:
+                result.append(child)
+                result.extend(collect_descendants(child))
+            return result
+
+        year_node = None
+        for node in reversed(collect_descendants(self.journal)):
+            if node.text.split()[0] == year:
+                year_node = node
+                break
+
+        if year_node is None:
             year_node = self.journal.add_child(year)
-            self.journal.children = sorted(self.journal.children, key=lambda c: c.text)
-        else:
-            year_node = self.journal.children[years.index(year)]
 
         months = [c.text.split()[0] for c in year_node.children]
         if not month in months:
             month_node = year_node.add_child(month)
-            year_node.children = sorted(
-                year_node.children,
-                key=lambda c: MONTH_ORDER.index(c.text.split()[0]),
-            )
         else:
             month_node = year_node.children[months.index(month)]
 

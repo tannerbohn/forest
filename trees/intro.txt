@@ -38,6 +38,7 @@
 		- An empty query (:? or :?*) shows similar notes to current note in the side panel
 	- :sn opens the sticky note board, showing #HL3 notes in the current context. :sn* searches the whole tree
 		- :sn <filter> filters by highlight or regex, e.g. :sn #HL1, :sn* #HL2, :sn todo
+		- :snr recovers the last sticky note board at the same cursor position (⮺ in the status bar indicates a board is recoverable)
 	- :b or :bookmark toggles a bookmark on the current note
 		- Press ` to open the side panel and see existing bookmarks
 		- Jump to a bookmark by pressing its number key (0-9)

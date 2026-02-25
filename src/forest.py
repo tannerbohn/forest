@@ -58,6 +58,7 @@ class StatusBar(Static):
     search_progress = reactive((0, 0))
     timer_remaining = reactive(None)
     cut_node_text = reactive("")
+    has_sticky_recovery = reactive(False)
 
     def compose_content(self):
 
@@ -123,10 +124,17 @@ class StatusBar(Static):
             else:
                 cut_text = Text("")
 
+            if self.has_sticky_recovery:
+                hl_sec = self.app.theme_variables["secondary"]
+                sticky_recovery_text = Text.from_markup(f" [{hl_sec}]⮺[/{hl_sec}]")
+            else:
+                sticky_recovery_text = Text("")
+
             end_text = (
                 cut_text
                 + timer_text
                 + needs_saving_text
+                + sticky_recovery_text
                 + hide_done_text
                 + progress_text
             )
@@ -165,6 +173,9 @@ class StatusBar(Static):
         self.compose_content()
 
     def watch_cut_node_text(self, new_value):
+        self.compose_content()
+
+    def watch_has_sticky_recovery(self, new_value):
         self.compose_content()
 
     def on_resize(self, event) -> None:
@@ -256,6 +267,7 @@ class InfoWidget(DataTable):
                 ["H (in :? search)", "Pin highlight on context"],
                 [":sn [filter]", "Sticky notes (context)"],
                 [":sn* [filter]", "Sticky notes (global)"],
+                [":snr", "Recover last sticky board"],
                 [":insert <name>", "Insert template"],
                 [":run [<idx>]", "Run ! cmd or follow [[PATH]]"],
                 [":help", "Show this help"],
@@ -512,7 +524,7 @@ class MultiPurposeSuggester(Suggester):
         super().__init__()
         self.mode = mode  # "command" or "edit"
         if self.mode == "command":
-            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ? <query> | ?* <query> | sn/sn* [filter]"
+            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ? <query> | ?* <query> | sn/sn* [filter] | snr"
             # | <path hint>+ <text>
         else:
             self.placeholder = ""
@@ -571,8 +583,10 @@ class MultiPurposeSuggester(Suggester):
         if "timer cancel".startswith(value_lower):
             return "timer cancel"
 
+        if value_lower == "snr":
+            return "snr"
         if "sn".startswith(value_lower):
-            return "sn [filter] (context) | sn* [filter] (global)"
+            return "sn [filter] (context) | sn* [filter] (global) | snr (recover)"
 
         # Show and filter subtree options when user types "insert"
         if "insert ".startswith(value_lower) or value_lower.startswith("insert"):
@@ -661,6 +675,7 @@ class ForestApp(App):
 
         self.sound_effects_enabled = self.config.sound_effects_enabled
         self.timer = Timer(self)
+        self._sticky_note_state = None
 
         self.logging = logging
 
@@ -965,25 +980,73 @@ class ForestApp(App):
                 if not matched:
                     self.notify("No matching notes found.")
                 else:
+                    hl_colors = {
+                        0: self.theme_variables.get("HL1", "#039ad7"),
+                        1: self.theme_variables.get("HL2", "#dca708"),
+                        2: self.theme_variables.get("HL3", "#c44f1f"),
+                    }
+                    self._sticky_note_state = {
+                        "nodes": matched,
+                        "title": title,
+                        "hl_colors": hl_colors,
+                        "cursor_index": 0,
+                    }
+                    self.status_bar.has_sticky_recovery = True
+                    screen = StickyNotesScreen(
+                        matched, title_text=title, hl_colors=hl_colors
+                    )
 
                     def on_dismiss(node):
+                        self._sticky_note_state["cursor_index"] = screen._cursor_index
                         if node is not None:
                             self.note_tree_widget.update_location(
                                 context_node=node.parent if node.parent else node,
                                 line_node=node,
                             )
 
-                    hl_colors = {
-                        0: self.theme_variables.get("HL1", "#039ad7"),
-                        1: self.theme_variables.get("HL2", "#dca708"),
-                        2: self.theme_variables.get("HL3", "#c44f1f"),
-                    }
-                    self.push_screen(
-                        StickyNotesScreen(
-                            matched, title_text=title, hl_colors=hl_colors
-                        ),
-                        callback=on_dismiss,
+                    self.push_screen(screen, callback=on_dismiss)
+            elif cmd_str == "snr":
+                if self._sticky_note_state:
+                    state = self._sticky_note_state
+                    all_tree_nodes = set(
+                        id(n)
+                        for n in self.note_tree.root.get_node_list(
+                            only_visible=False, hide_done=False
+                        )
                     )
+                    valid_nodes = [
+                        n
+                        for n in state["nodes"]
+                        if id(n) in all_tree_nodes and not n.is_done()
+                    ]
+                    if not valid_nodes:
+                        self.notify("All notes from that board have been removed.")
+                        self._sticky_note_state = None
+                        self.status_bar.has_sticky_recovery = False
+                    else:
+                        screen = StickyNotesScreen(
+                            valid_nodes,
+                            title_text=state["title"],
+                            hl_colors=state["hl_colors"],
+                        )
+                        screen._cursor_index = min(
+                            state["cursor_index"], len(valid_nodes) - 1
+                        )
+
+                        def on_dismiss(node):
+                            self._sticky_note_state["cursor_index"] = (
+                                screen._cursor_index
+                            )
+                            self._sticky_note_state["nodes"] = valid_nodes
+                            if node is not None:
+                                self.note_tree_widget.update_location(
+                                    context_node=node.parent if node.parent else node,
+                                    line_node=node,
+                                )
+
+                        self.push_screen(screen, callback=on_dismiss)
+                else:
+                    self.notify("No sticky note board to recover.")
             # elif "+ " in cmd_str:
             #     # Quick add: <location hint>+ <note text>
             #     plus_idx = cmd_str.index("+ ")

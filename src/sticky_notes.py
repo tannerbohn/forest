@@ -7,14 +7,13 @@ from textual.containers import Grid, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
-STICKY_COLORS = [
-    ("#000000", "#00b0ff"),  # ligh blue
-    ("#000000", "#ff5722"),  # burnt orange
-    ("#000000", "#ffc107"),  # yellow orange
-    ("#000000", "#aaff00"),  # green
-    ("#000000", "#ffff00"),  # yellow
-    ("#000000", "#1ee6b4"),  # green-teal
-    # ("#000000", "#ffffff")
+_DEFAULT_STICKY_COLORS = [
+    "#00b0ff",
+    "#ff5722",
+    "#ffc107",
+    "#aaff00",
+    "#ffff00",
+    "#1ee6b4",
 ]
 
 # Strip hashtags like #HL1 #HL2 #HL3 #DONE from display text
@@ -25,9 +24,10 @@ NOTE_HEIGHT = 10
 CELL_WIDTH = NOTE_WIDTH + 4  # padding + gutter
 
 
-def _color_for_text(text: str):
+def _color_for_text(text: str, sticky_colors):
     """Deterministic color based on text content."""
-    return STICKY_COLORS[sum(ord(ch) for ch in text) % len(STICKY_COLORS)]
+    bg = sticky_colors[sum(ord(ch) for ch in text) % len(sticky_colors)]
+    return ("#000000", bg)
 
 
 def _display_text(text: str) -> str:
@@ -116,7 +116,7 @@ def _group_nodes_by_branch(nodes):
 class StickyNoteWidget(Static):
     can_focus = True
 
-    def __init__(self, node, hl_colors=None, **kwargs):
+    def __init__(self, node, hl_colors=None, sticky_colors=None, **kwargs):
         super().__init__(**kwargs)
         self.node = node
         if hl_colors and node.highlight_index is not None:
@@ -126,10 +126,10 @@ class StickyNoteWidget(Static):
             self.styles.background = bg
             self.styles.color = f"{fg} 90%"
         else:
-            fg, bg = _color_for_text(node.text)
+            fg, bg = _color_for_text(node.text, sticky_colors or _DEFAULT_STICKY_COLORS)
 
-            self.styles.background = f"{bg} 85%"
-            self.styles.color = f"{fg} 70%"
+            self.styles.background = f"{bg} 90%"
+            self.styles.color = f"{fg} 90%"
 
         # self.styles.background = bg
         # self.styles.color = f"{fg} 80%"
@@ -159,12 +159,13 @@ class BranchRootWidget(StickyNoteWidget):
 
     def __init__(self, node, **kwargs):
         super().__init__(node, **kwargs)
-        self.styles.background = "#333333"
-        self.styles.color = f"#ffffff 70%"  # "#aaaaaa"
         self.styles.height = NOTE_HEIGHT
         self.styles.text_style = "bold"
 
     def on_mount(self):
+        bg = self.app.theme_variables.get("SNBGR", "#333333")
+        self.styles.background = bg
+        self.styles.color = "#ffffff 70%"
         path_str = self.node.get_path_string(width=(NOTE_WIDTH - 2) * (NOTE_HEIGHT - 3))
         if not path_str:
             path_str = _display_text(self.node.text)
@@ -189,7 +190,7 @@ class StickyNotesScreen(ModalScreen):
     #sn-title {
         width: 100%;
         height: 1;
-        text-align: center;
+        text-align: left;
         text-style: bold;
         background: $panel;
         color: $foreground;
@@ -231,7 +232,16 @@ class StickyNotesScreen(ModalScreen):
         self._cols = 1
         self._cursor_index = 0
 
+    def _get_sticky_colors(self):
+        """Build sticky color list from theme variables, falling back to defaults."""
+        tv = self.app.theme_variables
+        colors = [tv.get(f"SNBG{i}") for i in range(6)]
+        if all(c is not None for c in colors):
+            return colors
+        return _DEFAULT_STICKY_COLORS
+
     def compose(self) -> ComposeResult:
+        sticky_colors = self._get_sticky_colors()
         yield Static(self.title_text, id="sn-title")
         with VerticalScroll():
             with Grid(id="sn-grid"):
@@ -240,7 +250,9 @@ class StickyNotesScreen(ModalScreen):
                     if ancestor is not None:
                         yield BranchRootWidget(ancestor)
                     for node in group_nodes:
-                        yield StickyNoteWidget(node, hl_colors=self.hl_colors)
+                        yield StickyNoteWidget(
+                            node, hl_colors=self.hl_colors, sticky_colors=sticky_colors
+                        )
 
     def _build_title(self):
         """Build title string with count and common ancestor."""
@@ -252,15 +264,34 @@ class StickyNotesScreen(ModalScreen):
                 parts.append(f"— {path}")
         return " ".join(parts)
 
+    def _update_title(self):
+        """Update title bar with tree emoji, left-justified title, and index on the right."""
+        from rich.text import Text
+
+        hl1 = self.app.theme_variables.get("HL1", "#039ad7")
+        title = self._build_title()
+        widgets = list(self.query("StickyNoteWidget, BranchRootWidget"))
+        total = len(widgets)
+        idx_text = f"[{self._cursor_index + 1}/{total}]"
+
+        start = Text.from_markup(f"🌲 {title}")
+        end = Text.from_markup(f"[{hl1}]{idx_text}[/{hl1}]")
+        remaining = max(0, self.size.width - len(start.plain) - len(end.plain) - 1)
+        padded = start + Text(" " * remaining) + end
+        self.query_one("#sn-title", Static).update(padded)
+
     def on_mount(self):
         self._update_columns()
-        self.query_one("#sn-title", Static).update(self._build_title())
+        self._update_title()
         widgets = self.query("StickyNoteWidget, BranchRootWidget")
         if widgets:
-            widgets[0].focus()
+            idx = min(self._cursor_index, len(widgets) - 1)
+            self._cursor_index = idx
+            widgets[idx].focus()
 
     def on_resize(self, event):
         self._update_columns()
+        self._update_title()
 
     def _update_columns(self):
         grid = self.query_one("#sn-grid", Grid)
@@ -292,6 +323,7 @@ class StickyNotesScreen(ModalScreen):
             self._cursor_index = new_index
             widget = widgets[self._cursor_index]
             widget.focus()
+            self._update_title()
             vs = self.query_one(VerticalScroll)
             row = self._cursor_index // self._cols
             row_height = NOTE_HEIGHT + 1  # note height + grid gutter

@@ -1,9 +1,9 @@
 {
     "sound_effects_enabled": true,
-    "default_theme": "forest_v2",
+    "default_theme": "forest",
     "log_level": "INFO",
     "location": "New York",
     "undo_depth": 10,
-    "auto_save": true,
+    "auto_save": false,
     "auto_save_interval": 5
 }

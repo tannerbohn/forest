@@ -7,87 +7,40 @@ To switch themes, set default_theme in config.json
 from textual.theme import Theme
 
 # ============================================================================
-# FOREST (Default)
+# FOREST (Default) - warm cozy forest with unique electric blue highlight
 # ============================================================================
-forest_bkg = "#120e0a"  # background color
+forest_bkg = "#110d08"  # rich dark soil
 forest = Theme(
     name="forest",
-    primary="#23332B",  # background of selected line of info table
-    foreground="#b5af9c",  # default text color
-    background=forest_bkg,  # shows up in scroll bar and behind help menu
+    primary="#2b2418",  # warm brown for selected line in info table
+    secondary="#18aee9",  # same as HL1
+    foreground="#d0c6a8",  # aged parchment by firelight
+    background=forest_bkg,  # deep soil
     surface=forest_bkg,  # main background
-    panel="#283323",  # "#382c1e", #"#4a3a26",  # header and footer background
+    panel="#2a2215",  # warm bark-brown header/footer
     variables={
         "block-cursor-text-style": "none",
         "block-cursor-blurred-text-style": "none",
         "footer-key-foreground": "white",
         "input-selection-background": "white 15%",
-        "dim-text": "#544d3d",  # when a note is marked complete
-        "HL1": "#039ad7",  # "#00b3ff",  # first (and most common) highlight text color
-        "HL2": "#dca708",  # "#f3a712",  # second highlight text color (for "ideas")
-        "HL3": "#c44f1f",  # "#db452b",  # third highlight text color (for high-important)
+        "dim-text": "#4a4232",  # fallen leaves - completed notes
+        "HL1": "#18aee9",  # vivid sky blue - primary highlight
+        "HL2": "#deb650",  # dappled sunlight - ideas
+        "HL3": "#d16835",  # glowing embers - high importance
         "cursor-arrow": "white",  # current-line indicator
-        "default-arrow": "#746652",  # default line marker halfway between HL1 and background
-        "age-color-0": "#b5af9c",  # far-left indicator strip color for new notes
-        "age-color-1": "#78715d",
-        "age-color-2": "#2a261e",
-        "age-column-bg": forest_bkg,  # indicator strip color for oldest notes
-        "find-text-bg": "#443520",  # warm brown background for :f matches
-    },
-)
-
-pine_bkg = "#181a18"  # "#1f170d"
-pine = Theme(
-    name="pine",
-    primary="#ffffff",  # unused?
-    foreground="#aeb0ae",  # default text
-    background=pine_bkg,  # shows up in scroll bar and behind help menu
-    surface=pine_bkg,  # main background
-    panel="#263022",  # header and footer background
-    variables={
-        "block-cursor-text-style": "none",
-        "block-cursor-blurred-text-style": "none",
-        "footer-key-foreground": "white",
-        "input-selection-background": "white 15%",
-        "dim-text": "#545654",  # when a note is marked complete
-        "HL1": "#5d9c33",  # first highlight text color (and line count in top bar)
-        "HL2": "#2792c4",  # second highlight text color
-        "HL3": "#8c3545",  # third highlight text color
-        "cursor-arrow": "white",  # current-line indicator triangle
-        "default-arrow": "#475841",  # halfway between HL1 and background
-        "age-color-0": "#388038",  # far-left indicator strip color for new notes
-        "age-color-1": "#3f5627",
-        "age-color-2": "#181a18",
-        "age-column-bg": pine_bkg,  # indicator strip color for oldest notes
-        "find-text-bg": "#2a4028",  # green-tinted background for :f matches
-    },
-)
-
-
-coral_bkg = "#151c33"
-coral = Theme(
-    name="coral",
-    primary="#4a3a26",  # background of mouse-overed line
-    foreground="#b3af8f",  # default text
-    background=coral_bkg,  # shows up in scroll bar and behind help menu
-    surface=coral_bkg,  # main background
-    panel="#2b3a67",  # header and footer background
-    variables={
-        "block-cursor-text-style": "none",
-        "block-cursor-blurred-text-style": "none",
-        "footer-key-foreground": "white",
-        "input-selection-background": "white 15%",
-        "dim-text": "#494e51",  # when a note is marked complete
-        "HL1": "#f79256",  # first highlight text color (and line count in top bar)
-        "HL2": "#4dd1a9",  # "#66a85b", #"#f3a712",  # second highlight text color
-        "HL3": "#00b2ca",  # "#d4ae33", #"#db2b39",  # third highlight text color
-        "cursor-arrow": "white",  # current-line indicator triangle
-        "default-arrow": "#66999b",  # halfway between HL1 and background
-        "age-color-0": "#ffc482",  # far-left indicator strip color for new notes
-        "age-color-1": "#087dae",
-        "age-color-2": "#10475d",
-        "age-column-bg": coral_bkg,  # indicator strip color for oldest notes
-        "find-text-bg": "#2d3d65",  # blue background for :f matches
+        "default-arrow": "#6b5d45",  # warm brown line marker
+        "age-color-0": "#8aad6e",  # new growth - fresh notes
+        "age-color-1": "#6b5d45",  # aging bark
+        "age-color-2": "#1a1610",  # fading into dark earth
+        "age-column-bg": forest_bkg,  # age strip background
+        "find-text-bg": "#4d4130",  # warm amber background for :f matches
+        "SNBG0": "#d8c8a0",  # birch bark parchment
+        "SNBG1": "#9cc88c",  # moss / fern frond
+        "SNBG2": "#e8c060",  # honey lamplight
+        "SNBG3": "#d89878",  # autumn terracotta
+        "SNBG4": "#c4d4a8",  # sage lichen
+        "SNBG5": "#88b8c0",  # misty creek
+        "SNBGR": "#2a2215",  # warm bark (matches panel)
     },
 )
 
@@ -118,40 +71,16 @@ verve = Theme(
         "age-color-2": "#191724",  # Matching background for oldest notes
         "age-column-bg": "#191724",
         "find-text-bg": "#3d3460",  # rich purple background for :f matches
+        "SNBG0": "#9ccfd8",  # foam green
+        "SNBG1": "#eb6f92",  # energetic rose
+        "SNBG2": "#f6c177",  # saffron gold
+        "SNBG3": "#c4a7e7",  # bright lilac
+        "SNBG4": "#ebbcba",  # soft coral
+        "SNBG5": "#3e8fb0",  # deep teal-blue
+        "SNBGR": "#26233a",  # indigo panel (matches panel)
     },
 )
 
-
-# ============================================================================
-# FOREST V2 - Warm organic cozy forest
-# ============================================================================
-forest_v2_bkg = "#110d08"  # rich dark soil
-forest_v2 = Theme(
-    name="forest_v2",
-    primary="#2b2418",  # warm brown for selected line in info table
-    secondary="#18aee9",  # same as HL1
-    foreground="#d0c6a8",  # aged parchment by firelight
-    background=forest_v2_bkg,  # deep soil
-    surface=forest_v2_bkg,  # main background
-    panel="#2a2215",  # warm bark-brown header/footer
-    variables={
-        "block-cursor-text-style": "none",
-        "block-cursor-blurred-text-style": "none",
-        "footer-key-foreground": "white",
-        "input-selection-background": "white 15%",
-        "dim-text": "#4a4232",  # fallen leaves - completed notes
-        "HL1": "#18aee9",  # vivid sky blue - primary highlight
-        "HL2": "#deb650",  # dappled sunlight - ideas
-        "HL3": "#d16835",  # glowing embers - high importance
-        "cursor-arrow": "white",  # current-line indicator
-        "default-arrow": "#6b5d45",  # warm brown line marker
-        "age-color-0": "#8aad6e",  # new growth - fresh notes
-        "age-color-1": "#6b5d45",  # aging bark
-        "age-color-2": "#1a1610",  # fading into dark earth
-        "age-column-bg": forest_v2_bkg,  # age strip background
-        "find-text-bg": "#4d4130",  # warm amber background for :f matches
-    },
-)
 
 # ============================================================================
 # Theme Registry
@@ -159,10 +88,7 @@ forest_v2 = Theme(
 # All available themes - these will be registered with Textual
 THEMES = {
     "forest": forest,
-    "forest_v2": forest_v2,
-    "pine": pine,
     "verve": verve,
-    "coral": coral,
 }
 
 # ============================================================================

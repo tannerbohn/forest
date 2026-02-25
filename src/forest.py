@@ -21,6 +21,7 @@ from config import Config
 from node import Node
 from note_tree import NoteTree
 from note_tree_widget import NoteTreeWidget
+from sticky_notes import StickyNotesScreen
 from subtrees import SUBTREES
 from themes import THEMES
 from timer import Timer
@@ -250,9 +251,11 @@ class InfoWidget(DataTable):
                 [":b or :bookmark", "Toggle bookmark"],
                 [":j+ <text>", "Add journal entry"],
                 [":? <query regex>", "Search in context"],
-                [":?? <query regex>", "Search globally"],
+                [":?*/?? <query regex>", "Search globally"],
                 ["", "(empty query to find similar)"],
                 ["H (in :? search)", "Pin highlight on context"],
+                [":sn [filter]", "Sticky notes (context)"],
+                [":sn* [filter]", "Sticky notes (global)"],
                 [":insert <name>", "Insert template"],
                 [":run [<idx>]", "Run ! cmd or follow [[PATH]]"],
                 [":help", "Show this help"],
@@ -509,7 +512,7 @@ class MultiPurposeSuggester(Suggester):
         super().__init__()
         self.mode = mode  # "command" or "edit"
         if self.mode == "command":
-            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ? <query> | ?? <query>"
+            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ? <query> | ?* <query> | sn/sn* [filter]"
             # | <path hint>+ <text>
         else:
             self.placeholder = ""
@@ -554,9 +557,12 @@ class MultiPurposeSuggester(Suggester):
             return "j+ <journal entry text>"
 
         if value == "?":
-            return "? <local query regex> | ?? <global query regex> | (use empty query to find similar notes)"
-        if value == "??":
-            return "?? <global query regex> | (use empty query to find similar notes)"
+            return "? <local query regex> | ?*/?? <global query regex> | (use empty query to find similar notes)"
+        if value in ["?*", "??"]:
+            return (
+                value
+                + " <global query regex> | (use empty query to find similar notes)"
+            )
 
         # Show example durations when user types "timer "
         if "timer ".startswith(value_lower):
@@ -564,6 +570,9 @@ class MultiPurposeSuggester(Suggester):
 
         if "timer cancel".startswith(value_lower):
             return "timer cancel"
+
+        if "sn".startswith(value_lower):
+            return "sn [filter] (context) | sn* [filter] (global)"
 
         # Show and filter subtree options when user types "insert"
         if "insert ".startswith(value_lower) or value_lower.startswith("insert"):
@@ -787,9 +796,11 @@ class ForestApp(App):
                 self.note_tree_widget.add_journal_entry(text)
             elif cmd_str.startswith("?"):
                 global_scope = False
-                if cmd_str.startswith("??"):
+                if cmd_str.startswith("?*") or cmd_str.startswith("??"):
                     global_scope = True
-                query = cmd_str.lstrip("? ")
+                    query = cmd_str[2:].strip()
+                else:
+                    query = cmd_str[1:].strip()
 
                 # Normalize path separators (handle both " › " and " > ")
                 query = query.replace(" › ", ">").replace(" > ", ">")
@@ -914,6 +925,65 @@ class ForestApp(App):
             elif cmd_str.startswith("timer "):
                 duration_str = cmd_str[6:].strip()
                 self.timer.start(duration_str)
+            elif (
+                cmd_str.startswith("sn*")
+                or cmd_str == "sn"
+                or cmd_str.startswith("sn ")
+            ):
+                if cmd_str.startswith("sn*"):
+                    filter_arg = cmd_str[3:].strip()
+                    all_nodes = self.note_tree.root.get_node_list(
+                        only_visible=False, hide_done=True
+                    )
+                else:
+                    filter_arg = cmd_str[2:].strip()
+                    all_nodes = self.note_tree.context_node.get_node_list(
+                        only_visible=False, hide_done=True
+                    )
+                # Skip the root node and the context node itself
+                all_nodes = [
+                    n
+                    for n in all_nodes
+                    if n.parent is not None and n is not self.note_tree.context_node
+                ]
+
+                if not filter_arg:
+                    matched = [n for n in all_nodes if n.highlight_index is not None]
+                    title = "Sticky Notes — #HL"
+                elif filter_arg in ("#HL1", "#HL2", "#HL3"):
+                    hl_idx = int(filter_arg[-1]) - 1
+                    matched = [n for n in all_nodes if n.highlight_index == hl_idx]
+                    title = f"Sticky Notes — {filter_arg}"
+                else:
+                    try:
+                        pat = re.compile(filter_arg, re.IGNORECASE)
+                    except re.error:
+                        pat = re.compile(re.escape(filter_arg), re.IGNORECASE)
+                    matched = [n for n in all_nodes if pat.search(n.text)]
+                    title = f"Sticky Notes — /{filter_arg}/"
+
+                if not matched:
+                    self.notify("No matching notes found.")
+                else:
+
+                    def on_dismiss(node):
+                        if node is not None:
+                            self.note_tree_widget.update_location(
+                                context_node=node.parent if node.parent else node,
+                                line_node=node,
+                            )
+
+                    hl_colors = {
+                        0: self.theme_variables.get("HL1", "#039ad7"),
+                        1: self.theme_variables.get("HL2", "#dca708"),
+                        2: self.theme_variables.get("HL3", "#c44f1f"),
+                    }
+                    self.push_screen(
+                        StickyNotesScreen(
+                            matched, title_text=title, hl_colors=hl_colors
+                        ),
+                        callback=on_dismiss,
+                    )
             # elif "+ " in cmd_str:
             #     # Quick add: <location hint>+ <note text>
             #     plus_idx = cmd_str.index("+ ")

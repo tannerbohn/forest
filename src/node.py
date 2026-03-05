@@ -16,10 +16,6 @@ class Node:
         self.children = []
         self.depth = depth
         self.is_collapsed = is_collapsed
-        self.contextual_highlight = (
-            None  # regex pattern for descendant text highlighting
-        )
-
         self.creation_time = datetime.now()
 
         self.index = 0
@@ -114,18 +110,6 @@ class Node:
             cur_node = cur_node.parent
 
         return parts[::-1]
-
-    def get_active_contextual_highlights(self):
-        """Walk up ancestors collecting all active contextual_highlight patterns.
-        Returns list with closest (self) first, preserving order, deduplicating."""
-        patterns = []
-        ancestor = self
-        while ancestor is not None:
-            if ancestor.contextual_highlight:
-                if ancestor.contextual_highlight not in patterns:
-                    patterns.append(ancestor.contextual_highlight)
-            ancestor = ancestor.parent
-        return patterns
 
     def get_path_string(self, width: int = 50):
         parts = self.get_path(include_self=True)[1:]

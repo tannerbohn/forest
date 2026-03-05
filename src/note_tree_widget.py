@@ -8,6 +8,7 @@ from rich.text import Text
 from textual._segment_tools import line_pad
 from textual.binding import Binding
 from textual.color import Gradient
+from textual.geometry import Size
 from textual.strip import Strip
 from textual.widgets import Tree
 
@@ -79,6 +80,12 @@ class NoteTreeWidget(Tree):
         if self._tree_lines:
             self.move_cursor_to_line(0)
 
+    def _build(self) -> None:
+        super()._build()
+        padding = self.size.height // 2
+        w, h = self.virtual_size
+        self.virtual_size = Size(w, h + padding)
+
     def get_first_widget_for_node(self, widget_node):
         """Get the first widget of a multiline node, or the widget itself if single-line."""
         if widget_node and hasattr(widget_node, "_first_widget_of_multiline"):
@@ -111,37 +118,21 @@ class NoteTreeWidget(Tree):
                     arrow_char = "⟫"  # "»" #"≡"
             else:
                 if is_cursor:
-                    if _node.contextual_highlight:
-                        arrow_char = "🟆"  # "🟐"  # "🟆"
-                    else:
-                        arrow_char = "❯"  # "►" #"•" #"●"
+                    arrow_char = "❯"  # "►" #"•" #"●"
                 else:
-                    if _node.contextual_highlight:
-                        arrow_char = "🟆"  # "🟄" # "🞌"  # "⋅" #"─" #"🢜" #"►"
-                    else:
-                        arrow_char = "›"  # "🞌"
+                    arrow_char = "›"  # "🞌"
 
             # Determine arrow color
-            # if _node.contextual_highlight:
-            #     tag = self.app.get_theme_variable_defaults().get("HL3") or "orange"
-            #     if _node.is_collapsed:
-            #         arrow_str = f"[bold {tag}]{arrow_char}[/bold {tag}]"
-            #     else:
-            #         arrow_str = f"[{tag}]{arrow_char}[/{tag}]"
-            # else:
             if is_cursor:
                 tag = (
                     self.app.get_theme_variable_defaults().get("cursor-arrow")
                     or "white"
                 )
             else:
-                if _node.contextual_highlight:
-                    tag = self.app.get_theme_variable_defaults().get("HL3") or "orange"
-                else:
-                    tag = (
-                        self.app.get_theme_variable_defaults().get("default-arrow")
-                        or "white"
-                    )
+                tag = (
+                    self.app.get_theme_variable_defaults().get("default-arrow")
+                    or "white"
+                )
 
             if _node.is_collapsed:
                 arrow_str = f"[bold {tag}]{arrow_char}[/bold {tag}]"
@@ -163,24 +154,6 @@ class NoteTreeWidget(Tree):
                     text = re.sub(pattern, f"[{formatting}]\\g<0>[/{formatting}]", text)
                 except re.error as e:
                     logging.error(f"Invalid regex pattern '{pattern}': {e}")
-
-            # contextual highlights from ancestor nodes
-            find_bg = self.app.get_theme_variable_defaults().get(
-                "find-text-bg", "#333333"
-            )
-            ancestor = _node
-            while ancestor is not None:
-                if ancestor.contextual_highlight:
-                    try:
-                        text = re.sub(
-                            ancestor.contextual_highlight,
-                            f"[on {find_bg}]\\g<0>[/on {find_bg}]",
-                            text,
-                            flags=re.IGNORECASE,
-                        )
-                    except re.error:
-                        pass
-                ancestor = ancestor.parent
 
             # highlighting (not visible if a note is #DONE)
             if _node.is_highlighted():
@@ -320,7 +293,7 @@ class NoteTreeWidget(Tree):
         self.app.status_bar.needs_saving = self.note_tree.has_unsaved_operations
 
     def update_location(self, context_node, line_node):
-        self.note_tree.update_context(context_node, expand=True)
+        self.note_tree.update_context(context_node)
         # self.move_cursor_to_line(0)
         self.render()
         self._fix_cursor_position(line_node)
@@ -339,15 +312,6 @@ class NoteTreeWidget(Tree):
 
         node = self.cursor_node._node
 
-        # If this node has a contextual highlight set directly on it, remove it first
-        if node.contextual_highlight:
-            self.note_tree.push_undo(node.parent)
-            node.contextual_highlight = None
-            self.note_tree.has_unsaved_operations = True
-            self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
-            return
-
-        # Otherwise, toggle DONE status
         self.note_tree.push_undo(node.parent)
         node.toggle_done()
         self.note_tree.has_unsaved_operations = True
@@ -512,7 +476,7 @@ class NoteTreeWidget(Tree):
         if self.app.in_search_mode():
             return
 
-        self.note_tree.update_context(self.cursor_node._node, expand=True)
+        self.note_tree.update_context(self.cursor_node._node)
 
         self.render()
         self.cursor_line = 0
@@ -793,11 +757,15 @@ class NoteTreeWidget(Tree):
                 logging.error(f"Node not in list: {node._node.text}")
 
     def watch_cursor_line(self, previous_line: int, line: int) -> None:
-        previous_node = self._get_node(previous_line)
         node = self._get_node(line)
 
-        if previous_node and previous_node.label:
-            self.set_styled_node_label(previous_node)
+        # Unstyle previous node and last node (last can get spuriously
+        # cursor-styled when _tree_lines shifts during tree rebuild)
+        for l in (previous_line, len(self._tree_lines) - 1):
+            if l != line:
+                n = self._get_node(l)
+                if n and n.label:
+                    self.set_styled_node_label(n)
 
         if node and node.label:
             self.set_styled_node_label(node, is_cursor=True)

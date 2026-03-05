@@ -14,20 +14,31 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.suggester import Suggester, SuggestFromList
 from textual.theme import Theme
-from textual.widgets import (DataTable, Footer, Input, Markdown, ProgressBar,
-                             Static, Tree)
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Input,
+    Markdown,
+    ProgressBar,
+    Static,
+    Tree,
+)
 
 from config import Config
 from node import Node
 from note_tree import NoteTree
 from note_tree_widget import NoteTreeWidget
-from sticky_notes import StickyNotesScreen
+from sticky_notes import StickyNotesScreen, _parse_flashcard
 from subtrees import SUBTREES
 from themes import THEMES
 from timer import Timer
-from utils import (apply_input_substitutions, compose_clock_notify_contents,
-                   determine_state_filename, extract_path_references,
-                   play_sound_effect)
+from utils import (
+    apply_input_substitutions,
+    compose_clock_notify_contents,
+    determine_state_filename,
+    extract_path_references,
+    play_sound_effect,
+)
 
 # ============================================================================
 # CONFIGURATION
@@ -35,18 +46,22 @@ from utils import (apply_input_substitutions, compose_clock_notify_contents,
 # Load configuration from config.json
 config = Config()
 
-LOG_FILE = "log.txt"
 
-# Configure logging from config
-log_level = getattr(logging, config.log_level.upper(), logging.INFO)
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=log_level,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    filemode="w",
-    force=True,
-)
-logging.info("Application started")
+def setup_logging(tree_filepath):
+    """Configure per-instance logging based on the tree file being opened."""
+    log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    tree_name = os.path.splitext(os.path.basename(tree_filepath))[0]
+    log_file = os.path.join(log_dir, f"{tree_name}.log")
+    log_level = getattr(logging, config.log_level.upper(), logging.INFO)
+    logging.basicConfig(
+        filename=log_file,
+        level=log_level,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        filemode="w",
+        force=True,
+    )
+    logging.info("Application started for %s", tree_filepath)
 
 
 class StatusBar(Static):
@@ -95,10 +110,7 @@ class StatusBar(Static):
                 + f"[{hl}][b]Search result {self.search_progress[0]+1}/{self.search_progress[1]}[/b][/{hl}] | "
             )
 
-            # Show [f] hint for local searches only
             hint_text = Text("")
-            if self.app._search_is_local and ">" not in self.app._search_query:
-                hint_text = Text.from_markup(f"[{hl}][H] to pin highlight[/{hl}]")
 
             remaining_width = (
                 self.size.width - len(text.plain) - len(hint_text.plain) - 1
@@ -251,7 +263,6 @@ class InfoWidget(DataTable):
                 ["tab/S-tab", "Indent/deindent"],
                 ["h", "Cycle highlight"],
                 ["x", "Toggle #DONE"],
-                ["", "(or remove pinned highlight)"],
                 ["X", "Toggle hiding #DONE notes"],
                 ["c", "Cut (press again to cancel)"],
                 ["v", "Paste after cursor"],
@@ -264,7 +275,6 @@ class InfoWidget(DataTable):
                 [":? <query regex>", "Search in context"],
                 [":?*/?? <query regex>", "Search globally"],
                 ["", "(empty query to find similar)"],
-                ["H (in :? search)", "Pin highlight on context"],
                 [":sn [filter]", "Sticky notes (context)"],
                 [":sn* [filter]", "Sticky notes (global)"],
                 [":snr", "Recover last sticky board"],
@@ -422,27 +432,6 @@ class InfoWidget(DataTable):
                 text = node.text if node else ""
                 table_rows.append([index, text])
 
-            # Add Active Highlights section
-            table_rows.extend(
-                [
-                    ["", ""],
-                    ["", Text.from_markup("[white][b]Active Highlights[/b][/white]")],
-                    ["", ""],
-                ]
-            )
-
-            # Get active highlights from cursor node
-            cursor_node = self.app.note_tree_widget.cursor_node
-            if cursor_node and hasattr(cursor_node, "_node"):
-                patterns = cursor_node._node.get_active_contextual_highlights()
-                if patterns:
-                    for pattern in patterns:
-                        table_rows.append(["🔍", pattern])
-                else:
-                    table_rows.append(["", Text.from_markup("[dim]None[/dim]")])
-            else:
-                table_rows.append(["", Text.from_markup("[dim]No node selected[/dim]")])
-
             self.clear(columns=True)
             self.add_columns("", "")
             self.add_rows(table_rows)  # [1:])
@@ -524,7 +513,7 @@ class MultiPurposeSuggester(Suggester):
         super().__init__()
         self.mode = mode  # "command" or "edit"
         if self.mode == "command":
-            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ? <query> | ?* <query> | sn/sn* [filter] | snr"
+            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ?/?* <query> | sn/sn* [filter] | snr"
             # | <path hint>+ <text>
         else:
             self.placeholder = ""
@@ -964,18 +953,26 @@ class ForestApp(App):
 
                 if not filter_arg:
                     matched = [n for n in all_nodes if n.highlight_index is not None]
-                    title = "Sticky Notes — #HL"
+                    title = "#HL"
                 elif filter_arg in ("#HL1", "#HL2", "#HL3"):
                     hl_idx = int(filter_arg[-1]) - 1
                     matched = [n for n in all_nodes if n.highlight_index == hl_idx]
-                    title = f"Sticky Notes — {filter_arg}"
+                    title = filter_arg
                 else:
                     try:
                         pat = re.compile(filter_arg, re.IGNORECASE)
                     except re.error:
                         pat = re.compile(re.escape(filter_arg), re.IGNORECASE)
                     matched = [n for n in all_nodes if pat.search(n.text)]
-                    title = f"Sticky Notes — /{filter_arg}/"
+                    title = f"/{filter_arg}/"
+
+                # Filter out first-child answer nodes of child-answer flashcards
+                answer_ids = set()
+                for n in matched:
+                    fc = _parse_flashcard(n)
+                    if fc and fc[2] and n.children:  # fc[2] = is_child_answer
+                        answer_ids.add(id(n.children[0]))
+                matched = [n for n in matched if id(n) not in answer_ids]
 
                 if not matched:
                     self.notify("No matching notes found.")
@@ -1019,6 +1016,13 @@ class ForestApp(App):
                         for n in state["nodes"]
                         if id(n) in all_tree_nodes and not n.is_done()
                     ]
+                    # Filter out first-child answer nodes of child-answer flashcards
+                    answer_ids = set()
+                    for n in valid_nodes:
+                        fc = _parse_flashcard(n)
+                        if fc and fc[2] and n.children:  # fc[2] = is_child_answer
+                            answer_ids.add(id(n.children[0]))
+                    valid_nodes = [n for n in valid_nodes if id(n) not in answer_ids]
                     if not valid_nodes:
                         self.notify("All notes from that board have been removed.")
                         self._sticky_note_state = None
@@ -1121,20 +1125,6 @@ class ForestApp(App):
                 event.stop()
                 self._search_index += 1
                 self.update_search_view()
-            elif (
-                event.key == "H"
-                and self._search_is_local
-                and self._search_query
-                and ">" not in self._search_query
-            ):
-                ctx = self._search_context_node
-                if ctx.contextual_highlight == self._search_query:
-                    ctx.contextual_highlight = None
-                else:
-                    ctx.contextual_highlight = self._search_query
-                    # self.note_tree.expand_nodes_matching(self._search_query, ctx)
-                self.note_tree.has_unsaved_operations = True
-                self.note_tree_widget.render()
             elif event.key in ["enter", "escape"]:
                 self._search_index = 0
                 self._search_matches = []
@@ -1161,6 +1151,8 @@ if __name__ == "__main__":
     parser.add_argument("notes", help="a notes file (.txt)")
     args = parser.parse_args()
     notes_filename = args.notes
+
+    setup_logging(notes_filename)
 
     app = ForestApp(notes_filename)
     app.run()

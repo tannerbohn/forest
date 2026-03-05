@@ -31,9 +31,6 @@
 - Command mode (press : to enter)
 	- :?<query> searches within the current context (regex), :?*<query> searches the whole tree (regex)
 		- Use up/down arrows to cycle through matches, Enter to accept, Esc to cancel
-		- While viewing LOCAL (:?) search results, press H to pin the highlight on the context node #HL1
-			- The [[Command mode]] node has a pinned context highlight for the term "search" -- you can see it listed under "Active Highlights" if you press ` while at that note
-		- Pressing x on a note with a contextual highlight removes it (first press), then toggles #DONE (second press)
 		- if ">" appears in the search query, searching will compare against path strings, not just the note string
 		- An empty query (:? or :?*) shows similar notes to current note in the side panel
 	- :sn opens the sticky note board, showing #HL3 notes in the current context. :sn* searches the whole tree
@@ -54,3 +51,9 @@
 	- Press ` to cycle through the side panel views (bookmarks, similar notes) or hide it
 - What's up with the coloured strip on the left?
 	- This strip reflects the age of a note. New notes are bright, and as they get older they slowly fade
+- Flashcards
+	- To treat a note as a two-sided flashcard in the sticky-note view, you simply need to include "::"
+	- This is side A :: This is side B
+	- This is also side A ::
+		- And the first child is used for side B
+	- Use ":sn ::" to generate a sticky note view of flash cards

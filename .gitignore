@@ -1,6 +1,6 @@
 # personal
 experiments/
-log.txt
+logs/
 config.json
 trees/*
 !trees/intro.txt

@@ -9,9 +9,14 @@ from datetime import datetime
 
 from node import Node, lca_distance
 from subtrees import SUBTREES
-from utils import (MONTH_ORDER, add_subtree, convert_to_nested_list,
-                   determine_state_filename, normalize_indentation,
-                   trigram_similarity)
+from utils import (
+    MONTH_ORDER,
+    add_subtree,
+    convert_to_nested_list,
+    determine_state_filename,
+    normalize_indentation,
+    trigram_similarity,
+)
 
 # import pyclip
 
@@ -74,6 +79,7 @@ class NoteTree:
         self.bookmarks: dict[int, Node] = {}
         self.bookmark_last_use_times: dict[int, datetime] = {}
 
+        key_map = {n.get_key(): n for n in node_list}
         creation_time_map = {}  # map from first 30 chars to creation time
         context_node = None
         if os.path.exists(self.state_filename):
@@ -88,7 +94,7 @@ class NoteTree:
                         creation_time_map[key] = datetime.fromisoformat(entry["t"])
 
                     matching_node = None
-                    if entry.get("c") or entry.get("x") or "b" in entry or "h" in entry:
+                    if entry.get("c") or entry.get("x") or "b" in entry:
                         if index < len(node_list) and node_list[index].get_key() == key:
                             matching_node = node_list[index]
                         else:
@@ -100,6 +106,8 @@ class NoteTree:
                                 if node.get_key() == key:
                                     matching_node = node
                                     break
+                            else:
+                                matching_node = key_map.get(key)
 
                     if matching_node:
                         if entry.get("c"):
@@ -112,8 +120,11 @@ class NoteTree:
                             self.bookmark_last_use_times[slot] = datetime.fromtimestamp(
                                 last_used
                             )
-                        if "h" in entry:
-                            matching_node.contextual_highlight = entry["h"]
+
+        if not os.path.exists(self.state_filename):
+            for n in node_list:
+                if n.children:
+                    n.is_collapsed = True
 
         for n in node_list:
             n.creation_time = creation_time_map.get(n.get_key(), datetime.now())
@@ -164,9 +175,6 @@ class NoteTree:
                             ]
                             break
 
-                if node.contextual_highlight:
-                    entry["h"] = node.contextual_highlight
-
                 entries.append(entry)
 
         # ensure for readability that each note gets its own line in the json file
@@ -178,10 +186,15 @@ class NoteTree:
         self.has_unsaved_operations = False
 
     def update_visible_node_list(self):
+        # Context node's children are always visible (the tree renders them
+        # regardless of collapse state), so treat it as expanded here.
+        was_collapsed = self.context_node.is_collapsed
+        self.context_node.is_collapsed = False
         self.visible_node_list = self.context_node.get_node_list(
             only_visible=True,
             hide_done=self.hide_done,
         )
+        self.context_node.is_collapsed = was_collapsed
 
     # --- Undo/Redo ---
     # Snapshot-based: before each mutation, deepcopy the affected subtree.
@@ -424,10 +437,8 @@ class NoteTree:
 
         return new_node
 
-    def update_context(self, node, expand=False):
+    def update_context(self, node):
         self.context_node = node
-        if expand:
-            self.context_node.is_collapsed = False
         self.update_visible_node_list()
 
         # self.has_unsaved_operations = True
@@ -438,14 +449,10 @@ class NoteTree:
             focus_node = self.bookmarks[index]
             self.bookmark_last_use_times[index] = datetime.now()
 
-            # if focus_node.parent:
-            #     self.update_context(focus_node.parent, expand=True)
-            # else:
-            #     self.update_context(focus_node, expand=True)
             if not focus_node.children:
-                self.update_context(focus_node.parent, expand=True)
+                self.update_context(focus_node.parent)
             else:
-                self.update_context(focus_node, expand=True)
+                self.update_context(focus_node)
 
             return focus_node
 

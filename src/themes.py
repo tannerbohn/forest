@@ -110,6 +110,7 @@ TEXT_COLOR_REGEX_LIST = [
     (r"\*.*\*", "bold"),
     (r"^ (>.*)", "dim"),
     (r"(\[\[.*?\]\])", "dim"),
+    (r"::", "dim"),
     # (r"(\[\[.*?\]\])", "u"),
     # (r"TODO|FIXME", "#ff0000"),  # Color TODO/FIXME red
     # (r"(?i)\b(What|How|Why|If|Could|Is)\b", "bold"),

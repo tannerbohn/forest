@@ -24,6 +24,25 @@ NOTE_HEIGHT = 10
 CELL_WIDTH = NOTE_WIDTH + 4  # padding + gutter
 
 
+def _parse_flashcard(node):
+    """Parse :: flashcard syntax.
+
+    Returns (front, back, is_child_answer) or None if not a flashcard.
+    - Inline: "Q :: A" → ("Q", "A", False)
+    - Child-answer: "Q ::" or "Q :: #HL1" with children → ("Q", child_text, True)
+    """
+    if "::" not in node.text:
+        return None
+    front, _, back_raw = node.text.partition("::")
+    front = front.strip()
+    back_clean = _STRIP_TAGS_RE.sub("", back_raw).strip()
+    if back_clean:  # inline answer
+        return (front, back_clean, False)
+    elif node.children:  # child answer
+        return (front, _display_text(node.children[0].text), True)
+    return None
+
+
 def _color_for_text(text: str, sticky_colors):
     """Deterministic color based on text content."""
     bg = sticky_colors[sum(ord(ch) for ch in text) % len(sticky_colors)]
@@ -119,6 +138,12 @@ class StickyNoteWidget(Static):
     def __init__(self, node, hl_colors=None, sticky_colors=None, **kwargs):
         super().__init__(**kwargs)
         self.node = node
+        self._flipped = False
+        fc = _parse_flashcard(node)
+        self.is_flashcard = fc is not None
+        if fc:
+            self._front_text = fc[0]
+            self._back_text = fc[1]
         if hl_colors and node.highlight_index is not None:
             bg = hl_colors[node.highlight_index]
             fg = "#000000"
@@ -142,13 +167,39 @@ class StickyNoteWidget(Static):
     def compose(self) -> ComposeResult:
         return []
 
-    def on_mount(self):
-        display = _display_text(self.node.text)
-        if self.node.highlight_index is not None:
+    def _render_display(self):
+        """Return the formatted display text for the current state."""
+        if self.is_flashcard and self._flipped:
+            display = self._back_text
+        elif self.is_flashcard:
+            display = self._front_text
+        else:
+            display = _display_text(self.node.text)
+        if self.is_flashcard:
+            display = (
+                # "Ⓐ "
+                "🅐 "
+                # "❈ " #
+                if self._flipped
+                else "🅠 "
+            ) + display
+        elif self.node.highlight_index is not None:
             display = "★ " + display
-        content_width = NOTE_WIDTH - 4  # padding: 2 left + 2 right
-        content_height = NOTE_HEIGHT - 2  # padding: 1 top + 1 bottom
-        self.update(_wrap_and_truncate(display, content_width, content_height))
+        cw = self.content_size.width
+        ch = self.content_size.height
+        content_width = max(8, cw if cw > 0 else NOTE_WIDTH - 4)
+        content_height = max(2, ch if ch > 0 else NOTE_HEIGHT - 2)
+        return _wrap_and_truncate(display, content_width, content_height)
+
+    def on_resize(self, event):
+        self.update(self._render_display())
+
+    def flip(self):
+        """Toggle between question and answer for flashcard notes."""
+        if not self.is_flashcard:
+            return
+        self._flipped = not self._flipped
+        self.update(self._render_display())
 
     def on_click(self):
         self.screen.dismiss(self.node)
@@ -162,17 +213,23 @@ class BranchRootWidget(StickyNoteWidget):
         self.styles.height = NOTE_HEIGHT
         self.styles.text_style = "bold"
 
+    def _render_branch_display(self):
+        cw = self.content_size.width
+        ch = self.content_size.height
+        content_width = max(8, cw if cw > 0 else NOTE_WIDTH - 6)
+        content_height = max(2, ch if ch > 0 else NOTE_HEIGHT - 4)
+        path_str = self.node.get_path_string(width=content_width * content_height)
+        if not path_str:
+            path_str = _display_text(self.node.text)
+        return _wrap_and_truncate(path_str, content_width, content_height)
+
     def on_mount(self):
         bg = self.app.theme_variables.get("SNBGR", "#333333")
         self.styles.background = bg
         self.styles.color = "#ffffff 70%"
-        path_str = self.node.get_path_string(width=(NOTE_WIDTH - 2) * (NOTE_HEIGHT - 3))
-        if not path_str:
-            path_str = _display_text(self.node.text)
-        # Account for border (1 col each side, 1 row each side) on top of padding
-        content_width = NOTE_WIDTH - 2 - 4  # border: 2 + padding: 4
-        content_height = NOTE_HEIGHT - 2 - 2  # border: 2 + padding: 2
-        self.update(_wrap_and_truncate(path_str, content_width, content_height))
+
+    def on_resize(self, event):
+        self.update(self._render_branch_display())
 
 
 class StickyNotesScreen(ModalScreen):
@@ -254,29 +311,34 @@ class StickyNotesScreen(ModalScreen):
                             node, hl_colors=self.hl_colors, sticky_colors=sticky_colors
                         )
 
-    def _build_title(self):
-        """Build title string with count and common ancestor."""
-        parts = [self.title_text, f"({len(self.nodes)})"]
-        ancestor = _global_common_ancestor(self.nodes)
-        if ancestor:
-            path = ancestor.get_path_string(width=60)
-            if path:
-                parts.append(f"— {path}")
-        return " ".join(parts)
-
     def _update_title(self):
-        """Update title bar with tree emoji, left-justified title, and index on the right."""
+        """Update title bar with filter, focused note path, and index."""
         from rich.text import Text
 
         hl1 = self.app.theme_variables.get("HL1", "#039ad7")
-        title = self._build_title()
         widgets = list(self.query("StickyNoteWidget, BranchRootWidget"))
         total = len(widgets)
-        idx_text = f"[{self._cursor_index + 1}/{total}]"
 
-        start = Text.from_markup(f"🌲 {title}")
-        end = Text.from_markup(f"[{hl1}]{idx_text}[/{hl1}]")
-        remaining = max(0, self.size.width - len(start.plain) - len(end.plain) - 1)
+        # Build: 🌲 <filter in accent> — <path of focused note>  [idx/total]
+        filter_part = Text.from_markup(f"🌲 [{hl1}]{self.title_text}[/{hl1}]")
+        end = Text.from_markup(f" [{hl1}]\\[{self._cursor_index + 1}/{total}][/{hl1}]")
+
+        # Get path of currently focused note
+        path_text = Text("")
+        if widgets and 0 <= self._cursor_index < len(widgets):
+            node = widgets[self._cursor_index].node
+            path_node = (
+                node.parent if node.parent and node.parent.parent is not None else node
+            )
+            available = max(
+                10, self.size.width - filter_part.cell_len - end.cell_len - 4
+            )
+            path_str = path_node.get_path_string(width=available)
+            if path_str:
+                path_text = Text(f" — {path_str}")
+
+        start = filter_part + path_text
+        remaining = max(0, self.size.width - start.cell_len - end.cell_len)
         padded = start + Text(" " * remaining) + end
         self.query_one("#sn-title", Static).update(padded)
 
@@ -312,6 +374,13 @@ class StickyNotesScreen(ModalScreen):
             delta = -self._cols
         elif event.key == "down":
             delta = self._cols
+        elif event.key == "space":
+            w = widgets[self._cursor_index]
+            if isinstance(w, StickyNoteWidget) and w.is_flashcard:
+                w.flip()
+            event.prevent_default()
+            event.stop()
+            return
         elif event.key == "enter":
             self.dismiss(widgets[self._cursor_index].node)
             event.prevent_default()

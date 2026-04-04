@@ -1,3 +1,4 @@
+import random
 import re
 import textwrap
 from typing import cast
@@ -499,7 +500,8 @@ class NoteTreeWidget(Tree):
             return
 
         current_node_list = self.note_tree.context_node.get_node_list(
-            only_visible=True, hide_done=self.note_tree.hide_done
+            only_visible=False,  # need false here in case the context node is collapsed
+            hide_done=self.note_tree.hide_done,
         )[1:]
         # if the parent is already in the current context.. just switch lines
         if self.cursor_node._node.parent in current_node_list:
@@ -580,6 +582,36 @@ class NoteTreeWidget(Tree):
         if _node:
             self.move_cursor_to_line(0)
             self.render()
+
+    def jump_to_random(self, global_scope=False):
+        if global_scope:
+            nodes = self.note_tree.root.get_node_list(only_visible=False)
+        else:
+            nodes = self.note_tree.context_node.get_node_list(only_visible=False)
+        nodes = [
+            n
+            for n in nodes
+            if n.parent is not None and n is not self.note_tree.context_node
+        ]
+        if not nodes:
+            self.app.notify("No notes to jump to")
+            return
+        target = random.choice(nodes)
+        if global_scope:
+            if target.parent:
+                self.update_location(target.parent, target)
+            else:
+                self.update_location(target, target)
+        else:
+            # Expand collapsed ancestors to reveal the target
+            node = target
+            while node and node is not self.note_tree.context_node:
+                if node.is_collapsed:
+                    node.is_collapsed = False
+                node = node.parent
+            self.note_tree.update_visible_node_list()
+            self.render()
+            self._fix_cursor_position(target)
 
     def toggle_bookmark(self):
         if not self.cursor_node:

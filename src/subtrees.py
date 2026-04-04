@@ -16,6 +16,7 @@ SUBTREES["BRAINSTORM"] = {
     "> How can I frame this problem as an interesting question?": None,
     "> What assumptions are being made here?": None,
     "> What can be done to make this problem go away?": None,
+    "> How has nature or other domains already solve this problem?": None,
     "> What can I bring to this that others cannot?": None,
     "> What rules are there that I can break to demonstrate my worth?": None,
     "> Approach the problem from the opposite end. How can you avoid failure?": None,
@@ -39,6 +40,7 @@ SUBTREES["BRAINSTORM"] = {
     "> What would it mean to align a solution to my values?": None,
     "> What is the smallest change that would make the largest difference?": None,
     "> What paradoxes are at play here?": None,
+    "> What fundamental assumption is at play here? What if the opposite is true?": None,
 }
 
 SUBTREES["VALUES"] = {
@@ -74,14 +76,16 @@ SUBTREES["DECIDING"] = {
 }
 
 SUBTREES["FLOW"] = {
-    "> Reduce friction in the desired direction": None,
+    "> Reduce friction in the desired direction (including starting in low-viscosity/interesting part)": None,
     "> Build momentum": None,
-    "> Establish a 'sink' to create pull in that direction": None,
+    "> Establish a 'sink' to create pull in that direction (e.g. unresolved tension, goal, or incentive)": None,
     "> Positive feedback loops": None,
     "> Channeling (e.g. set milestones to celebrare)": None,
-    "> Potential energy (position yourself/team in a way to maximize potential)": None,
+    "> Build hydraulic head/Potential energy (position yourself/team in a way to maximize potential, elevate importance)": None,
     "> Catalysts (find a key individual or resource to accelerate/spark movement in the desired direction)": None,
     "> Induction: manufacture flow in a nearby current to induce flow in the target one": None,
+    "> Venturi Effect: slight resource constriction or constraint accelerates flow": None,
+    "> Structural integrity: safety enables capacity which expands ambition, produces movement even upon failure": None,
 }
 
 SUBTREES["WELCOME"] = {

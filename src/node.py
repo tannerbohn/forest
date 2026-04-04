@@ -78,14 +78,6 @@ class Node:
         words = [w for w in words if not w[0] == "#"]
         return "-".join(words[:3]).lower()
 
-    def get_key(self):
-        """
-        The "key" for a node is a unique identifier used when saving/loading the state file. We need to be able to attach metadata to notes
-          even when multiple nearby notes might be identical
-        """
-        path = self.get_path(include_self=False)
-        return ">".join([p[-10:] for p in path[1:]] + [self.text[-30:]])
-
     def get_hashtags(self):
         if not "#" in self.text:
             return []

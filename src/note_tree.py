@@ -1,6 +1,4 @@
 import copy
-import json
-import os
 import random
 import re
 import textwrap
@@ -9,125 +7,90 @@ from datetime import datetime
 
 from node import Node, lca_distance
 from subtrees import SUBTREES
-from utils import (
-    MONTH_ORDER,
-    add_subtree,
-    convert_to_nested_list,
-    determine_state_filename,
-    normalize_indentation,
-    trigram_similarity,
-)
+from utils import (MONTH_ORDER, add_subtree, convert_to_nested_list,
+                   normalize_indentation, trigram_similarity)
+
+# Matches inline metadata suffix like " @{2026-03-05,b7,x}" at end of line
+METADATA_RE = re.compile(r"\s+@\{([^}]+)\}$")
+DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}$")
 
 # import pyclip
 
 
 class NoteTree:
-    def __init__(self, filename, undo_depth=50):
+    def __init__(self, filename, undo_depth=50, max_recent_contexts=5):
         self.filename = filename
-
-        self.state_filename = determine_state_filename(filename)
-
         self.root = Node(parent=None, text=filename)
+        self.recent_contexts: list[Node] = []
+        self._max_recent_contexts = max_recent_contexts
 
         with open(self.filename, "r") as f:
             lines = f.read().splitlines()
 
-            cur_node = self.root
-
-            prev_depth = -1
-            for l in lines:
-                # print("Line:", l)
-                if not l.strip():
-                    # print("\tskipping")
-                    continue
-
-                depth = len(l) - len(l.lstrip())
-
-                # handle the case where we accidentally indent a little too much
-                if depth > prev_depth:
-                    depth = prev_depth + 1
-                # print(f"\tdepth = {depth}")
-
-                text = l.strip()
-                text = text.lstrip("- ")
-
-                if depth > prev_depth:
-                    # print(f"\tDEEPER. Adding child")
-                    child = cur_node.add_child(text)
-                    cur_node = child
-                elif depth == prev_depth:
-                    # print(f"\tSAME DEPTH. Adding sibling")
-                    sibling = cur_node.parent.add_child(text)
-                    cur_node = sibling
-                elif depth < prev_depth:
-                    # prev_depth = 1, depth = 3
-                    nb_steps = prev_depth - depth
-                    # print(f"\tSHALLOWER BY {nb_steps}")
-                    for _ in range(nb_steps):
-                        cur_node = cur_node.parent
-                    node = cur_node.parent.add_child(text)
-                    cur_node = node
-
-                prev_depth = depth
-
-        # controls whether to hide all notes marked as done
         self.hide_done = False
-
-        node_list = self.index_nodes()
-
         self.journal = None
         self.bookmarks: dict[int, Node] = {}
         self.bookmark_last_use_times: dict[int, datetime] = {}
-
-        key_map = {n.get_key(): n for n in node_list}
-        creation_time_map = {}  # map from first 30 chars to creation time
         context_node = None
-        if os.path.exists(self.state_filename):
-            with open(self.state_filename, "r") as f:
-                state = json.load(f)
 
-                for entry in state:
-                    key, index = entry["k"], entry["i"]
+        cur_node = self.root
+        prev_depth = -1
 
-                    # creation time — always present
-                    if "t" in entry:
-                        creation_time_map[key] = datetime.fromisoformat(entry["t"])
+        for l in lines:
+            if not l.strip():
+                continue
 
-                    matching_node = None
-                    if entry.get("c") or entry.get("x") or "b" in entry:
-                        if index < len(node_list) and node_list[index].get_key() == key:
-                            matching_node = node_list[index]
-                        else:
-                            for i in range(
-                                max(index - 15, 0),
-                                min(index + 15, len(node_list)),
-                            ):
-                                node = node_list[i]
-                                if node.get_key() == key:
-                                    matching_node = node
-                                    break
-                            else:
-                                matching_node = key_map.get(key)
+            depth = len(l) - len(l.lstrip("\t"))
+            if depth > prev_depth:
+                depth = prev_depth + 1
 
-                    if matching_node:
-                        if entry.get("c"):
-                            matching_node.is_collapsed = True
-                        if entry.get("x"):
-                            context_node = matching_node
-                        if "b" in entry:
-                            slot, last_used = entry["b"]
-                            self.bookmarks[slot] = matching_node
-                            self.bookmark_last_use_times[slot] = datetime.fromtimestamp(
-                                last_used
-                            )
+            stripped = l.strip()
 
-        if not os.path.exists(self.state_filename):
-            for n in node_list:
-                if n.children:
-                    n.is_collapsed = True
+            is_collapsed = stripped.startswith("+")
+            text = stripped[2:]  # strip "+ " or "- "
 
-        for n in node_list:
-            n.creation_time = creation_time_map.get(n.get_key(), datetime.now())
+            creation_time = datetime.now()
+            bookmark_slot = None
+            is_context = False
+
+            meta_match = METADATA_RE.search(text)
+            if meta_match:
+                meta_str = meta_match.group(1)
+                parts = meta_str.split(",")
+                if DATE_RE.match(parts[0]):
+                    text = text[: meta_match.start()]
+                    creation_time = datetime.strptime(parts[0], "%Y-%m-%d")
+                    for part in parts[1:]:
+                        if part.startswith("b") and part[1:].isdigit():
+                            bookmark_slot = int(part[1:])
+                        elif part == "x":
+                            is_context = True
+
+            # Build tree structure
+            if depth > prev_depth:
+                child = cur_node.add_child(text)
+                cur_node = child
+            elif depth == prev_depth:
+                sibling = cur_node.parent.add_child(text)
+                cur_node = sibling
+            elif depth < prev_depth:
+                nb_steps = prev_depth - depth
+                for _ in range(nb_steps):
+                    cur_node = cur_node.parent
+                node = cur_node.parent.add_child(text)
+                cur_node = node
+
+            cur_node.is_collapsed = is_collapsed
+            cur_node.creation_time = creation_time
+            if bookmark_slot is not None:
+                self.bookmarks[bookmark_slot] = cur_node
+                self.bookmark_last_use_times[bookmark_slot] = datetime.now()
+            if is_context:
+                context_node = cur_node
+
+            prev_depth = depth
+
+        node_list = self.index_nodes()
 
         if len(self.root.children) == 0:
             add_subtree(self.root, SUBTREES["WELCOME"])
@@ -144,44 +107,28 @@ class NoteTree:
     def save(self):
         node_list = self.root.get_node_list(only_visible=False, hide_done=False)
 
-        entries = []
-
         with open(self.filename, "w") as f:
-            for i, node in enumerate(node_list):
+            for node in node_list:
                 if node == self.root:
                     continue
 
-                text = ("\t" * (node.depth - 1)) + "- " + node.text
-                f.write(text + "\n")
+                prefix = "+" if node.is_collapsed else "-"
 
-                entry = {
-                    "k": node.get_key(),
-                    "i": i,
-                    "t": node.creation_time.isoformat(),
-                }
+                meta_parts = [node.creation_time.strftime("%Y-%m-%d")]
 
-                if node.is_collapsed:
-                    entry["c"] = 1
+                for slot, bm_node in self.bookmarks.items():
+                    if bm_node == node:
+                        meta_parts.append(f"b{slot}")
+                        break
 
                 if node == self.context_node:
-                    entry["x"] = 1
+                    meta_parts.append("x")
 
-                if node in self.bookmarks.values():
-                    for k, _node in self.bookmarks.items():
-                        if node == _node:
-                            entry["b"] = [
-                                k,
-                                self.bookmark_last_use_times[k].timestamp(),
-                            ]
-                            break
-
-                entries.append(entry)
-
-        # ensure for readability that each note gets its own line in the json file
-        with open(self.state_filename, "w") as f:
-            f.write("[\n")
-            f.write(",\n".join(json.dumps(e) for e in entries))
-            f.write("\n]")
+                meta_str = ",".join(meta_parts)
+                line = (
+                    "\t" * (node.depth - 1)
+                ) + f"{prefix} {node.text} @{{{meta_str}}}"
+                f.write(line + "\n")
 
         self.has_unsaved_operations = False
 
@@ -442,6 +389,12 @@ class NoteTree:
         self.update_visible_node_list()
 
         # self.has_unsaved_operations = True
+
+    def record_context_visit(self, node):
+        if node in self.recent_contexts:
+            self.recent_contexts.remove(node)
+        self.recent_contexts.insert(0, node)
+        self.recent_contexts = self.recent_contexts[: self._max_recent_contexts]
 
     def jump_to_bookmark(self, index) -> Node | None:
         if index in self.bookmarks:

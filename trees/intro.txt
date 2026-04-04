@@ -1,59 +1,60 @@
-- What is Forest?
-	- Forest is a note-taking/brainstorming interface made with Textual, built around the idea of organizing notes into nested branches and being able to zoom into branches
-	- To exit Forest, press Ctrl-Q
-- Navigation
-	- Up and down arrows to move between notes
-	- Left arrow zooms out (moves up in the tree), right arrow zooms in (focuses on the current branch)
-	- Space toggles collapse/expand on any note with children
-		- Look! This branch is collapsed!
-			- It can have so many things inside
-	- 0-9 jumps to a bookmarked note
-- Creating notes
-	- Press Enter to add a new note below the cursor
-	- While typing, you can press Tab or Shift+Tab at the start of the line to indent or de-indent it
-- #Editing notes
-	- Press e or Backspace to edit a note. Press Enter when done, or Esc to cancel
-	- x toggles a note as complete (dims the note and its children) #DONE
-	- X toggles hiding all #DONE notes from view
-	- Tab and Shift+Tab indent and de-indent a note
-	- Delete removes a note
-	- u and d move a note up or down among its siblings
-	- h cycles through highlight colours #HL1
-		- primary highlight #HL1
-		- secondary #HL2
-		- tertiary #HL3
-	- c to cut a note, v to paste it after the cursor. Press c again to cancel the cut #HL2
-	- z to undo, Z to redo #HL3
-	- Typing {NOW } in a note will be replaced with the current timestamp
-- Saving
-	- Press s to save. If you have unsaved changes, "Modified" will appear in the top bar
-	- Auto-save is also enabled by default
-- Command mode (press : to enter)
-	- :?<query> searches within the current context (regex), :?*<query> searches the whole tree (regex)
-		- Use up/down arrows to cycle through matches, Enter to accept, Esc to cancel
-		- if ">" appears in the search query, searching will compare against path strings, not just the note string
-		- An empty query (:? or :?*) shows similar notes to current note in the side panel
-	- :sn opens the sticky note board, showing #HL3 notes in the current context. :sn* searches the whole tree
-		- :sn <filter> filters by highlight or regex, e.g. :sn #HL1, :sn* #HL2, :sn todo
-		- :snr recovers the last sticky note board at the same cursor position (⮺ in the status bar indicates a board is recoverable)
-	- :b or :bookmark toggles a bookmark on the current note
-		- Press ` to open the side panel and see existing bookmarks
-		- Jump to a bookmark by pressing its number key (0-9)
-		- A maximum of 10 bookmarks are supported
-			- if all slots are filled in, a new bookmark will replace the least recently used bookmark
-	- :j+ <text> adds a timestamped journal entry (a journal branch is auto-created, organized by year and month)
-	- :run [<index>] runs ! shell commands or follows [[PATH]] references
-		- e.g. run the :run command on this note [[SAVING > AUTO-SAVE IS ALSO]]
-		- If multiple [[PATH]] references exist, use :run 0, :run 1, etc.
-	- :insert <name> inserts a predefined template subtree
-	- :help shows the help panel
-- Side panel
-	- Press ` to cycle through the side panel views (bookmarks, similar notes) or hide it
-- What's up with the coloured strip on the left?
-	- This strip reflects the age of a note. New notes are bright, and as they get older they slowly fade
-- Flashcards
-	- To treat a note as a two-sided flashcard in the sticky-note view, you simply need to include "::"
-	- This is side A :: This is side B
-	- This is also side A ::
-		- And the first child is used for side B
-	- Use ":sn ::" to generate a sticky note view of flash cards
+- What is Forest? @{2024-10-07}
+	- Forest is a note-taking/brainstorming interface made with Textual, built around the idea of organizing notes into nested branches and being able to zoom into branches @{2024-10-07}
+	- To exit Forest, press Ctrl-Q @{2026-02-16}
+- Navigation @{2026-02-16}
+	- Up and down arrows to move between notes @{2026-02-16}
+	- Left arrow zooms out (moves up in the tree), right arrow zooms in (focuses on the current branch) @{2026-02-16}
+	+ Space toggles collapse/expand on any note with children @{2026-02-16}
+		- Look! This branch is collapsed! @{2026-02-16}
+			- It can have so many things inside @{2026-02-16}
+	- 0-9 jumps to a bookmarked note @{2026-02-16}
+- Creating notes @{2026-02-16}
+	- Press Enter to add a new note below the cursor @{2026-02-16}
+	- While typing, you can press Tab or Shift+Tab at the start of the line to indent or de-indent it @{2026-02-16}
+- #Editing notes @{2024-01-22}
+	- Press e or Backspace to edit a note. Press Enter when done, or Esc to cancel @{2026-02-16}
+	- x toggles a note as complete (dims the note and its children) #DONE @{2026-02-16}
+	- X toggles hiding all #DONE notes from view @{2026-02-16}
+	- Tab and Shift+Tab indent and de-indent a note @{2026-02-16}
+	- Delete removes a note @{2026-02-16}
+	- u and d move a note up or down among its siblings @{2026-02-16}
+	+ h cycles through highlight colours #HL1 @{2026-02-16}
+		- primary highlight #HL1 @{2026-02-16}
+		- secondary #HL2 @{2026-02-16}
+		- tertiary #HL3 @{2026-02-16}
+	- c to cut a note, v to paste it after the cursor. Press c again to cancel the cut #HL2 @{2026-02-19}
+	- z to undo, Z to redo #HL3 @{2026-02-16}
+	- Typing {NOW } in a note will be replaced with the current timestamp @{2026-02-16}
+- Saving @{2026-02-16}
+	- Press s to save. If you have unsaved changes, "Modified" will appear in the top bar @{2026-02-16}
+	- Auto-save is also enabled by default @{2026-02-16}
+- Command mode (press : to enter) @{2026-02-16}
+	- :?<query> searches within the current context (regex), :?*<query> searches the whole tree (regex) @{2026-02-16}
+		- Use up/down arrows to cycle through matches, Enter to accept, Esc to cancel @{2026-02-16}
+		- if ">" appears in the search query, searching will compare against path strings, not just the note string @{2026-02-16}
+		- An empty query (:? or :?*) shows similar notes to current note in the side panel @{2026-02-16}
+	- :sn opens the sticky note board, showing #HL3 notes in the current context. :sn* searches the whole tree @{2026-02-24}
+		- :sn <filter> filters by highlight or regex, e.g. :sn #HL1, :sn* #HL2, :sn todo @{2026-02-24}
+		- :snr recovers the last sticky note board at the same cursor position (⮺ in the status bar indicates a board is recoverable) @{2026-03-05}
+	- :b or :bookmark toggles a bookmark on the current note @{2026-02-16,b0}
+		- Press ` to open the side panel and see existing bookmarks @{2026-02-16}
+		- Jump to a bookmark by pressing its number key (0-9) @{2026-02-16}
+		+ A maximum of 10 bookmarks are supported @{2026-02-16}
+			- if all slots are filled in, a new bookmark will replace the least recently used bookmark @{2026-02-17}
+	- :j+ <text> adds a timestamped journal entry (a journal branch is auto-created, organized by year and month) @{2026-02-16}
+	+ :run [<index>] runs ! shell commands or follows [[PATH]] references @{2026-02-16}
+		- e.g. run the :run command on this note [[SAVING > AUTO-SAVE IS ALSO]] @{2026-02-16}
+		- If multiple [[PATH]] references exist, use :run 0, :run 1, etc. @{2026-02-16}
+	- :random jumps to a random note in the current context, :random* jumps to a random note in the whole tree @{2026-03-06}
+	- :insert <name> inserts a predefined template subtree @{2026-02-16}
+	- :help shows the help panel @{2026-02-16}
+- Side panel @{2026-02-16}
+	- Press ` to cycle through the side panel views (bookmarks, similar notes) or hide it @{2026-02-16}
+- What's up with the coloured strip on the left? @{2026-02-16}
+	- This strip reflects the age of a note. New notes are bright, and as they get older they slowly fade @{2026-02-16}
+- Flashcards @{2026-03-05}
+	- To treat a note as a two-sided flashcard in the sticky-note view, you simply need to include "::" @{2026-03-05}
+	- This is side A :: This is side B @{2026-03-05}
+	- This is also side A :: @{2026-03-05}
+		- And the first child is used for side B @{2026-03-05}
+	- Use ":sn ::" to generate a sticky note view of flash cards @{2026-03-05}

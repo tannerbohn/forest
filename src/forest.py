@@ -14,15 +14,8 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.suggester import Suggester, SuggestFromList
 from textual.theme import Theme
-from textual.widgets import (
-    DataTable,
-    Footer,
-    Input,
-    Markdown,
-    ProgressBar,
-    Static,
-    Tree,
-)
+from textual.widgets import (DataTable, Footer, Input, Markdown, ProgressBar,
+                             Static, Tree)
 
 from config import Config
 from node import Node
@@ -32,13 +25,8 @@ from sticky_notes import StickyNotesScreen, _parse_flashcard
 from subtrees import SUBTREES
 from themes import THEMES
 from timer import Timer
-from utils import (
-    apply_input_substitutions,
-    compose_clock_notify_contents,
-    determine_state_filename,
-    extract_path_references,
-    play_sound_effect,
-)
+from utils import (apply_input_substitutions, compose_clock_notify_contents,
+                   extract_path_references, play_sound_effect)
 
 # ============================================================================
 # CONFIGURATION
@@ -200,6 +188,7 @@ class InfoWidget(DataTable):
     _search_results = []  # list of match nodes when search panel is shown
     _search_highlight_index = 0
     _pre_search_mode_index = 0  # panel mode to restore after search exits
+    _recent_ctx_index = -1  # selected index in recent contexts list (-1 = none)
 
     def on_mount(self):
         """Initialize the DataTable with columns to prevent first-render issues."""
@@ -209,6 +198,7 @@ class InfoWidget(DataTable):
     def cycle_mode(self):
         old_index = self.mode_index
         self.mode_index = (self.mode_index + 1) % len(self.mode_options)
+        self._recent_ctx_index = -1
         logging.info(
             f"cycle_mode: {old_index} -> {self.mode_index}, mode = {self.mode_options[self.mode_index]}"
         )
@@ -278,6 +268,8 @@ class InfoWidget(DataTable):
                 [":sn [filter]", "Sticky notes (context)"],
                 [":sn* [filter]", "Sticky notes (global)"],
                 [":snr", "Recover last sticky board"],
+                [":random", "Jump to random note (context)"],
+                [":random*", "Jump to random note (global)"],
                 [":insert <name>", "Insert template"],
                 [":run [<idx>]", "Run ! cmd or follow [[PATH]]"],
                 [":help", "Show this help"],
@@ -432,9 +424,29 @@ class InfoWidget(DataTable):
                 text = node.text if node else ""
                 table_rows.append([index, text])
 
+            recent = self.app.note_tree.recent_contexts
+            if recent:
+                table_rows.extend(
+                    [
+                        ["", ""],
+                        [
+                            "",
+                            Text.from_markup("[white][b]Recent Locations[/b][/white]"),
+                        ],
+                        ["", ""],
+                    ]
+                )
+                for i, node in enumerate(recent):
+                    label = node.text[:40] if node.text else "(root)"
+                    if i == self._recent_ctx_index:
+                        label = Text(f"  {label}", style="reverse")
+                    else:
+                        label = f"  {label}"
+                    table_rows.append(["", label])
+
             self.clear(columns=True)
             self.add_columns("", "")
-            self.add_rows(table_rows)  # [1:])
+            self.add_rows(table_rows)
             logging.info(
                 f"update_data: bookmarks table built with {len(table_rows)} rows, calling refresh()"
             )
@@ -513,7 +525,7 @@ class MultiPurposeSuggester(Suggester):
         super().__init__()
         self.mode = mode  # "command" or "edit"
         if self.mode == "command":
-            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ?/?* <query> | sn/sn* [filter] | snr"
+            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | ?/?* <query> | random/random* | sn/sn* [filter] | snr"
             # | <path hint>+ <text>
         else:
             self.placeholder = ""
@@ -574,6 +586,12 @@ class MultiPurposeSuggester(Suggester):
 
         if value_lower == "snr":
             return "snr"
+        if "collapse".startswith(value_lower):
+            return "collapse"
+
+        if "random".startswith(value_lower):
+            return "random (context) | random* (global)"
+
         if "sn".startswith(value_lower):
             return "sn [filter] (context) | sn* [filter] (global) | snr (recover)"
 
@@ -653,7 +671,11 @@ class ForestApp(App):
             self.register_theme(theme)
         self.theme = self.config.default_theme
 
-        self.note_tree = NoteTree(self.file_path, undo_depth=self.config.undo_depth)
+        self.note_tree = NoteTree(
+            self.file_path,
+            undo_depth=self.config.undo_depth,
+            max_recent_contexts=self.config.max_recent_contexts,
+        )
         self._node_being_edited = None
         self._search_matches = []
         self._search_index = 0
@@ -665,6 +687,10 @@ class ForestApp(App):
         self.sound_effects_enabled = self.config.sound_effects_enabled
         self.timer = Timer(self)
         self._sticky_note_state = None
+
+        self._command_history: list[str] = []
+        self._history_index: int = -1
+        self._history_draft: str = ""
 
         self.logging = logging
 
@@ -794,6 +820,11 @@ class ForestApp(App):
         else:
             # we're in command mode
             cmd_str = event.value.strip()
+            if cmd_str and (
+                not self._command_history or self._command_history[-1] != cmd_str
+            ):
+                self._command_history.append(cmd_str)
+            self._history_index = -1
             if cmd_str.startswith("j+ "):
                 text = cmd_str[3:]
                 self.note_tree.push_undo(self.note_tree.root)
@@ -921,9 +952,23 @@ class ForestApp(App):
                                     self.notify(f"No match found for: {path_query}")
                         else:
                             self.notify("No ! command or [[path]] reference found")
+            elif cmd_str == "collapse":
+                ctx = self.note_tree.context_node
+                descendants = ctx.get_node_list(only_visible=False, hide_done=False)[1:]
+                if any(n.children for n in descendants):
+                    self.note_tree.push_undo(ctx)
+                    for n in descendants:
+                        if n.children:
+                            n.is_collapsed = True
+                    self.note_tree.update_visible_node_list()
+                    self.note_tree.has_unsaved_operations = True
+                    self.note_tree_widget.render()
             elif cmd_str.startswith("insert "):
                 subtree_name = cmd_str.split(" ", 1)[-1]
                 self.note_tree_widget.add_subtree(subtree_name)
+            elif cmd_str in ("random", "random*"):
+                global_scope = cmd_str == "random*"
+                self.note_tree_widget.jump_to_random(global_scope=global_scope)
             elif cmd_str == "timer cancel":
                 self.timer.cancel()
             elif cmd_str.startswith("timer "):
@@ -1106,7 +1151,34 @@ class ForestApp(App):
         if event.key == "escape" and self.input_widget.display:
             self.input_widget.display = False
             self.input_widget.value = ""
+            self._history_index = -1
             self.note_tree_widget.focus()
+        elif (
+            self.input_widget.display
+            and not self._node_being_edited
+            and not self._search_matches
+        ):
+            if event.key == "up" and self._command_history:
+                event.prevent_default()
+                event.stop()
+                if self._history_index == -1:
+                    self._history_draft = self.input_widget.value
+                if self._history_index < len(self._command_history) - 1:
+                    self._history_index += 1
+                self.input_widget.value = self._command_history[
+                    -(self._history_index + 1)
+                ]
+            elif event.key == "down":
+                event.prevent_default()
+                event.stop()
+                if self._history_index > -1:
+                    self._history_index -= 1
+                if self._history_index == -1:
+                    self.input_widget.value = self._history_draft
+                else:
+                    self.input_widget.value = self._command_history[
+                        -(self._history_index + 1)
+                    ]
         elif self._node_being_edited:
             if event.key == "tab":
                 self.note_tree_widget.action_indent()
@@ -1126,6 +1198,10 @@ class ForestApp(App):
                 self._search_index += 1
                 self.update_search_view()
             elif event.key in ["enter", "escape"]:
+                if event.key == "enter":
+                    self.note_tree.record_context_visit(
+                        self._search_matches[self._search_index]
+                    )
                 self._search_index = 0
                 self._search_matches = []
                 self._search_query = ""
@@ -1139,10 +1215,43 @@ class ForestApp(App):
                     )
                 self._pre_search_position = (None, None)
                 self.info_widget.hide_search_results()
+        elif (
+            self.info_widget.mode_options[self.info_widget.mode_index] == "bookmarks"
+            and self.note_tree.recent_contexts
+            and not self.input_widget.display
+            and event.key in ("up", "down", "enter")
+        ):
+            recent = self.note_tree.recent_contexts
+            idx = self.info_widget._recent_ctx_index
+            if event.key == "up":
+                event.prevent_default()
+                event.stop()
+                self.info_widget._recent_ctx_index = max(idx - 1, 0)
+                self.info_widget.update_data()
+            elif event.key == "down":
+                event.prevent_default()
+                event.stop()
+                self.info_widget._recent_ctx_index = min(idx + 1, len(recent) - 1)
+                self.info_widget.update_data()
+            elif event.key == "enter" and idx >= 0:
+                event.prevent_default()
+                event.stop()
+                node = recent[idx]
+                self.note_tree_widget.update_location(
+                    context_node=node.parent if node.parent else node,
+                    line_node=node,
+                )
+                self.info_widget._recent_ctx_index = -1
+                self.info_widget.mode_index = 0
+                self.info_widget.update_data()
         elif event.key == "enter" and not self.input_widget.display:
             self.note_tree_widget.action_add_note()
         elif event.key in "0123456789":
+            bookmark_node = self.note_tree.bookmarks.get(int(event.key))
             self.note_tree_widget.visit_bookmark(int(event.key))
+            if bookmark_node:
+                self.note_tree.record_context_visit(bookmark_node)
+                self.info_widget.update_data()
 
 
 if __name__ == "__main__":

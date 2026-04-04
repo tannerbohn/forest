@@ -113,16 +113,6 @@ def add_subtree(node, tree):
             add_subtree(child, v)
 
 
-def determine_state_filename(filepath):
-    path_parts = os.path.split(filepath)
-    filename = path_parts[-1]
-    filename_without_ext = filename.rsplit(".", 1)[0]
-
-    return os.path.join(
-        *path_parts[:-1], "states", f"{filename_without_ext}_state.json"
-    )
-
-
 def trigram_similarity(w_a, w_b, coverage_weight=0.5):
     if not w_b:
         return 0

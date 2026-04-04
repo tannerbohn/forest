@@ -5,7 +5,10 @@ import re
 import urllib.request
 from datetime import datetime
 
-from playsound3 import playsound
+try:
+    from playsound3 import playsound
+except Exception:
+    playsound = None
 
 _ASSETS_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "assets", "sound_effects")
@@ -29,6 +32,8 @@ def play_sound_effect(name):
         return
     path = random.choice(_SOUNDS[name])
 
+    if playsound is None:
+        return
     try:
         playsound(path, block=False)
     except Exception as e:

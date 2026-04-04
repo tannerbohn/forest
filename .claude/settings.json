@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(./trees/intro.txt)",
+      "Read(./trees/intro.txt)",
+      "Read(./trees/test_tree.txt)"
+    ],
+    "deny": [
+      "Read(./trees/notes.txt)",
+      "Read(./trees/sandbox.txt)"
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "0"
+  }
+}

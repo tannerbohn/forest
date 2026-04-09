@@ -466,7 +466,6 @@ class NoteTreeWidget(Tree):
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
         self.app._copied_nodes.pop()
-        self.app._copy_jump_index = None
         self.app._refresh_copied_bar()
         self.render()
         self._fix_cursor_position(source)

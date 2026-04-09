@@ -14,8 +14,15 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.suggester import Suggester, SuggestFromList
 from textual.theme import Theme
-from textual.widgets import (DataTable, Footer, Input, Markdown, ProgressBar,
-                             Static, Tree)
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Input,
+    Markdown,
+    ProgressBar,
+    Static,
+    Tree,
+)
 
 from config import Config
 from node import Node
@@ -25,8 +32,12 @@ from sticky_notes import StickyNotesScreen, _parse_flashcard
 from subtrees import SUBTREES
 from themes import THEMES
 from timer import Timer
-from utils import (apply_input_substitutions, compose_clock_notify_contents,
-                   extract_path_references, play_sound_effect)
+from utils import (
+    apply_input_substitutions,
+    compose_clock_notify_contents,
+    extract_path_references,
+    play_sound_effect,
+)
 
 # ============================================================================
 # CONFIGURATION
@@ -179,11 +190,9 @@ class CopiedBar(Static):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._last_copied_nodes: list = []
-        self._last_jump_index: int | None = None
 
-    def render_content(self, copied_nodes: list, jump_index: int | None = None) -> None:
+    def render_content(self, copied_nodes: list) -> None:
         self._last_copied_nodes = copied_nodes
-        self._last_jump_index = jump_index
         if not copied_nodes:
             self.display = False
             return
@@ -192,18 +201,17 @@ class CopiedBar(Static):
         hl = self.app.get_theme_variable_defaults().get("HL3", "red")
         max_len = max(20, self.app.size.width - 5)
         lines = []
-        # last_index = len(copied_nodes) - 1
         for i, node in enumerate(copied_nodes[::-1]):
             txt = node.text[:max_len] + ("…" if len(node.text) > max_len else "")
             marker = "v" if i == 0 else "•"
-            if jump_index == i:
+            if i == 0:
                 lines.append(f"[reverse][{hl}]{marker}[/][/reverse] {txt}")
             else:
                 lines.append(f"[{hl}]{marker}[/] {txt}")
         self.update("\n".join(lines))
 
     def on_resize(self, event) -> None:
-        self.render_content(self._last_copied_nodes, self._last_jump_index)
+        self.render_content(self._last_copied_nodes)
 
 
 class InfoWidget(DataTable):
@@ -698,7 +706,6 @@ class ForestApp(App):
         self.timer = Timer(self)
         self._sticky_note_state = None
         self._copied_nodes: list = []
-        self._copy_jump_index: int | None = None
 
         self._command_history: list[str] = []
         self._history_index: int = -1
@@ -767,10 +774,8 @@ class ForestApp(App):
     def toggle_copy(self, node) -> None:
         if node in self._copied_nodes:
             self._copied_nodes.remove(node)
-            self._copy_jump_index = None
         else:
             self._copied_nodes.append(node)
-            self._copy_jump_index = None
         self._refresh_copied_bar()
 
     def jump_to_next_copy(self) -> None:
@@ -780,16 +785,11 @@ class ForestApp(App):
         live_ids = {id(n) for n in self.note_tree.get_node_list(only_visible=False)}
         self._copied_nodes = [n for n in self._copied_nodes if id(n) in live_ids]
         if not self._copied_nodes:
-            self._copy_jump_index = None
             self._refresh_copied_bar()
             return
-        if self._copy_jump_index is None:
-            self._copy_jump_index = 0
-        else:
-            self._copy_jump_index = (self._copy_jump_index + 1) % len(
-                self._copied_nodes
-            )
-        target = self._copied_nodes[self._copy_jump_index]
+        # Rotate: move current top (last) to the front so the next entry becomes top
+        self._copied_nodes = [self._copied_nodes[-1]] + self._copied_nodes[:-1]
+        target = self._copied_nodes[-1]
         self.note_tree_widget.update_location(
             context_node=target.parent if target.parent else target,
             line_node=target,
@@ -797,7 +797,7 @@ class ForestApp(App):
         self._refresh_copied_bar()
 
     def _refresh_copied_bar(self) -> None:
-        self.copied_bar.render_content(self._copied_nodes, self._copy_jump_index)
+        self.copied_bar.render_content(self._copied_nodes)
 
     def update_search_view(self):
         self._search_index = self._search_index % len(self._search_matches)

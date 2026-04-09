@@ -863,6 +863,7 @@ class ForestApp(App):
                 # self.note_tree_widget.focus()
             else:
                 # TODO:
+                self._node_being_edited = None
                 self.input_widget.display = False
                 self.input_widget.value = ""
                 self.note_tree_widget.focus()
@@ -925,6 +926,7 @@ class ForestApp(App):
                     self.notify("No search results found.")
                     self.input_widget.clear()
                     self.input_widget.display = False
+                    self.note_tree_widget.focus()
                     return
 
                 self._search_query = query
@@ -1209,6 +1211,7 @@ class ForestApp(App):
         if event.key == "escape" and self.input_widget.display:
             self.input_widget.display = False
             self.input_widget.value = ""
+            self._node_being_edited = None
             self._history_index = -1
             self.note_tree_widget.focus()
         elif (

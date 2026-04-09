@@ -60,7 +60,6 @@ class StatusBar(Static):
     search_mode = reactive(False)
     search_progress = reactive((0, 0))
     timer_remaining = reactive(None)
-    cut_node_text = reactive("")
     has_sticky_recovery = reactive(False)
 
     def compose_content(self):
@@ -116,13 +115,7 @@ class StatusBar(Static):
         else:
             start_text = Text.from_markup("🌲 ")
 
-            if self.cut_node_text:
-                hl_cut = self.app.get_theme_variable_defaults().get("HL3") or "red"
-                cut_text = Text.from_markup(
-                    f" [{hl_cut}]✀ {self.cut_node_text}[/{hl_cut}]"
-                )
-            else:
-                cut_text = Text("")
+            cut_text = Text("")
 
             if self.has_sticky_recovery:
                 hl_sec = self.app.theme_variables["secondary"]
@@ -172,14 +165,45 @@ class StatusBar(Static):
     def watch_timer_remaining(self, new_value):
         self.compose_content()
 
-    def watch_cut_node_text(self, new_value):
-        self.compose_content()
-
     def watch_has_sticky_recovery(self, new_value):
         self.compose_content()
 
     def on_resize(self, event) -> None:
         self.compose_content()
+
+
+class CopiedBar(Static):
+    """A bottom panel showing copied notes, one per line. The most recently
+    copied entry (bottom) is marked with ✀ and is what `v` will paste."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last_copied_nodes: list = []
+        self._last_jump_index: int | None = None
+
+    def render_content(self, copied_nodes: list, jump_index: int | None = None) -> None:
+        self._last_copied_nodes = copied_nodes
+        self._last_jump_index = jump_index
+        if not copied_nodes:
+            self.display = False
+            return
+        self.display = True
+        self.styles.height = len(copied_nodes)
+        hl = self.app.get_theme_variable_defaults().get("HL3", "red")
+        max_len = max(20, self.app.size.width - 5)
+        lines = []
+        # last_index = len(copied_nodes) - 1
+        for i, node in enumerate(copied_nodes[::-1]):
+            txt = node.text[:max_len] + ("…" if len(node.text) > max_len else "")
+            marker = "v" if i == 0 else "•"
+            if jump_index == i:
+                lines.append(f"[reverse][{hl}]{marker}[/][/reverse] {txt}")
+            else:
+                lines.append(f"[{hl}]{marker}[/] {txt}")
+        self.update("\n".join(lines))
+
+    def on_resize(self, event) -> None:
+        self.render_content(self._last_copied_nodes, self._last_jump_index)
 
 
 class InfoWidget(DataTable):
@@ -188,7 +212,6 @@ class InfoWidget(DataTable):
     _search_results = []  # list of match nodes when search panel is shown
     _search_highlight_index = 0
     _pre_search_mode_index = 0  # panel mode to restore after search exits
-    _recent_ctx_index = -1  # selected index in recent contexts list (-1 = none)
 
     def on_mount(self):
         """Initialize the DataTable with columns to prevent first-render issues."""
@@ -198,7 +221,6 @@ class InfoWidget(DataTable):
     def cycle_mode(self):
         old_index = self.mode_index
         self.mode_index = (self.mode_index + 1) % len(self.mode_options)
-        self._recent_ctx_index = -1
         logging.info(
             f"cycle_mode: {old_index} -> {self.mode_index}, mode = {self.mode_options[self.mode_index]}"
         )
@@ -424,26 +446,6 @@ class InfoWidget(DataTable):
                 text = node.text if node else ""
                 table_rows.append([index, text])
 
-            recent = self.app.note_tree.recent_contexts
-            if recent:
-                table_rows.extend(
-                    [
-                        ["", ""],
-                        [
-                            "",
-                            Text.from_markup("[white][b]Recent Locations[/b][/white]"),
-                        ],
-                        ["", ""],
-                    ]
-                )
-                for i, node in enumerate(recent):
-                    label = node.text[:40] if node.text else "(root)"
-                    if i == self._recent_ctx_index:
-                        label = Text(f"  {label}", style="reverse")
-                    else:
-                        label = f"  {label}"
-                    table_rows.append(["", label])
-
             self.clear(columns=True)
             self.add_columns("", "")
             self.add_rows(table_rows)
@@ -629,6 +631,15 @@ class ForestApp(App):
         color: $foreground 90%;
     }
 
+    #copied-bar {
+        dock: bottom;
+        height: 1;
+        background: $panel 50%;
+        color: $foreground 50%;
+        display: none;
+        padding: 0 1;
+    }
+
     #info-widget {
         width: 30%;
         height: 100%;
@@ -674,7 +685,6 @@ class ForestApp(App):
         self.note_tree = NoteTree(
             self.file_path,
             undo_depth=self.config.undo_depth,
-            max_recent_contexts=self.config.max_recent_contexts,
         )
         self._node_being_edited = None
         self._search_matches = []
@@ -687,6 +697,8 @@ class ForestApp(App):
         self.sound_effects_enabled = self.config.sound_effects_enabled
         self.timer = Timer(self)
         self._sticky_note_state = None
+        self._copied_nodes: list = []
+        self._copy_jump_index: int | None = None
 
         self._command_history: list[str] = []
         self._history_index: int = -1
@@ -720,6 +732,9 @@ class ForestApp(App):
         self.status_bar = StatusBar(id="status-bar")
         yield self.status_bar
 
+        self.copied_bar = CopiedBar(id="copied-bar")
+        yield self.copied_bar
+
         self.command_suggester = MultiPurposeSuggester(mode="command")
         self.edit_suggester = MultiPurposeSuggester(mode="edit")
         self.input_widget = Input(id="input-box", suggester=self.command_suggester)
@@ -748,6 +763,41 @@ class ForestApp(App):
         return {}
 
         # start_file_watcher(self.file_path, self.load_file_data)  # Start file watcher
+
+    def toggle_copy(self, node) -> None:
+        if node in self._copied_nodes:
+            self._copied_nodes.remove(node)
+            self._copy_jump_index = None
+        else:
+            self._copied_nodes.append(node)
+            self._copy_jump_index = None
+        self._refresh_copied_bar()
+
+    def jump_to_next_copy(self) -> None:
+        if not self._copied_nodes:
+            self.notify("No copied notes.")
+            return
+        live_ids = {id(n) for n in self.note_tree.get_node_list(only_visible=False)}
+        self._copied_nodes = [n for n in self._copied_nodes if id(n) in live_ids]
+        if not self._copied_nodes:
+            self._copy_jump_index = None
+            self._refresh_copied_bar()
+            return
+        if self._copy_jump_index is None:
+            self._copy_jump_index = 0
+        else:
+            self._copy_jump_index = (self._copy_jump_index + 1) % len(
+                self._copied_nodes
+            )
+        target = self._copied_nodes[self._copy_jump_index]
+        self.note_tree_widget.update_location(
+            context_node=target.parent if target.parent else target,
+            line_node=target,
+        )
+        self._refresh_copied_bar()
+
+    def _refresh_copied_bar(self) -> None:
+        self.copied_bar.render_content(self._copied_nodes, self._copy_jump_index)
 
     def update_search_view(self):
         self._search_index = self._search_index % len(self._search_matches)
@@ -1148,6 +1198,14 @@ class ForestApp(App):
         # logging.info(f"KEY: {event.key}")
         # logging.info(f"Info widget with size: {self.info_widget.size}")
 
+        if event.key == "enter" or event.key in "0123456789":
+            logging.info(
+                f"key={event.key} focused={self.focused!r} "
+                f"input.display={self.input_widget.display} "
+                f"node_being_edited={self._node_being_edited is not None} "
+                f"search_matches={len(self._search_matches)}"
+            )
+
         if event.key == "escape" and self.input_widget.display:
             self.input_widget.display = False
             self.input_widget.value = ""
@@ -1198,10 +1256,6 @@ class ForestApp(App):
                 self._search_index += 1
                 self.update_search_view()
             elif event.key in ["enter", "escape"]:
-                if event.key == "enter":
-                    self.note_tree.record_context_visit(
-                        self._search_matches[self._search_index]
-                    )
                 self._search_index = 0
                 self._search_matches = []
                 self._search_query = ""
@@ -1215,42 +1269,12 @@ class ForestApp(App):
                     )
                 self._pre_search_position = (None, None)
                 self.info_widget.hide_search_results()
-        elif (
-            self.info_widget.mode_options[self.info_widget.mode_index] == "bookmarks"
-            and self.note_tree.recent_contexts
-            and not self.input_widget.display
-            and event.key in ("up", "down", "enter")
-        ):
-            recent = self.note_tree.recent_contexts
-            idx = self.info_widget._recent_ctx_index
-            if event.key == "up":
-                event.prevent_default()
-                event.stop()
-                self.info_widget._recent_ctx_index = max(idx - 1, 0)
-                self.info_widget.update_data()
-            elif event.key == "down":
-                event.prevent_default()
-                event.stop()
-                self.info_widget._recent_ctx_index = min(idx + 1, len(recent) - 1)
-                self.info_widget.update_data()
-            elif event.key == "enter" and idx >= 0:
-                event.prevent_default()
-                event.stop()
-                node = recent[idx]
-                self.note_tree_widget.update_location(
-                    context_node=node.parent if node.parent else node,
-                    line_node=node,
-                )
-                self.info_widget._recent_ctx_index = -1
-                self.info_widget.mode_index = 0
-                self.info_widget.update_data()
         elif event.key == "enter" and not self.input_widget.display:
             self.note_tree_widget.action_add_note()
         elif event.key in "0123456789":
             bookmark_node = self.note_tree.bookmarks.get(int(event.key))
             self.note_tree_widget.visit_bookmark(int(event.key))
             if bookmark_node:
-                self.note_tree.record_context_visit(bookmark_node)
                 self.info_widget.update_data()
 
 

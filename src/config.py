@@ -11,7 +11,6 @@ DEFAULT_CONFIG = {
     "undo_depth": 50,
     "auto_save": True,
     "auto_save_interval": 5,
-    "max_recent_contexts": 5,
 }
 
 
@@ -89,7 +88,3 @@ class Config:
     @property
     def auto_save_interval(self):
         return self.get("auto_save_interval", 5)
-
-    @property
-    def max_recent_contexts(self):
-        return self.get("max_recent_contexts", 5)

@@ -18,11 +18,9 @@ DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}$")
 
 
 class NoteTree:
-    def __init__(self, filename, undo_depth=50, max_recent_contexts=5):
+    def __init__(self, filename, undo_depth=50):
         self.filename = filename
         self.root = Node(parent=None, text=filename)
-        self.recent_contexts: list[Node] = []
-        self._max_recent_contexts = max_recent_contexts
 
         with open(self.filename, "r") as f:
             lines = f.read().splitlines()
@@ -389,12 +387,6 @@ class NoteTree:
         self.update_visible_node_list()
 
         # self.has_unsaved_operations = True
-
-    def record_context_visit(self, node):
-        if node in self.recent_contexts:
-            self.recent_contexts.remove(node)
-        self.recent_contexts.insert(0, node)
-        self.recent_contexts = self.recent_contexts[: self._max_recent_contexts]
 
     def jump_to_bookmark(self, index) -> Node | None:
         if index in self.bookmarks:

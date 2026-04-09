@@ -11,18 +11,17 @@
 - Creating notes @{2026-02-16}
 	- Press Enter to add a new note below the cursor @{2026-02-16}
 	- While typing, you can press Tab or Shift+Tab at the start of the line to indent or de-indent it @{2026-02-16}
-- #Editing notes @{2024-01-22}
+- Editing notes @{2024-01-22}
 	- Press e or Backspace to edit a note. Press Enter when done, or Esc to cancel @{2026-02-16}
 	- x toggles a note as complete (dims the note and its children) #DONE @{2026-02-16}
 	- X toggles hiding all #DONE notes from view @{2026-02-16}
 	- Tab and Shift+Tab indent and de-indent a note @{2026-02-16}
 	- Delete removes a note @{2026-02-16}
 	- u and d move a note up or down among its siblings @{2026-02-16}
-	+ h cycles through highlight colours #HL1 @{2026-02-16}
+	- h cycles through highlight colours #HL1 @{2026-02-16}
 		- primary highlight #HL1 @{2026-02-16}
 		- secondary #HL2 @{2026-02-16}
 		- tertiary #HL3 @{2026-02-16}
-	- c to cut a note, v to paste it after the cursor. Press c again to cancel the cut #HL2 @{2026-02-19}
 	- z to undo, Z to redo #HL3 @{2026-02-16}
 	- Typing {NOW } in a note will be replaced with the current timestamp @{2026-02-16}
 - Saving @{2026-02-16}
@@ -36,7 +35,7 @@
 	- :sn opens the sticky note board, showing #HL3 notes in the current context. :sn* searches the whole tree @{2026-02-24}
 		- :sn <filter> filters by highlight or regex, e.g. :sn #HL1, :sn* #HL2, :sn todo @{2026-02-24}
 		- :snr recovers the last sticky note board at the same cursor position (⮺ in the status bar indicates a board is recoverable) @{2026-03-05}
-	- :b or :bookmark toggles a bookmark on the current note @{2026-02-16,b0}
+	- :b or :bookmark toggles a bookmark on the current note @{2026-02-16}
 		- Press ` to open the side panel and see existing bookmarks @{2026-02-16}
 		- Jump to a bookmark by pressing its number key (0-9) @{2026-02-16}
 		+ A maximum of 10 bookmarks are supported @{2026-02-16}
@@ -50,6 +49,10 @@
 	- :help shows the help panel @{2026-02-16}
 - Side panel @{2026-02-16}
 	- Press ` to cycle through the side panel views (bookmarks, similar notes) or hide it @{2026-02-16}
+- Copying and Pasting @{2026-04-09}
+	- Press "c" to add a note to the top of the copied list (will appear at the bottom). Press "c" again to remove from the list. @{2026-04-09}
+	- If you move to another location and press "v", the top copied note will be pasted to that location (as a child of the cursor note) @{2026-04-09}
+	- Press "C" to cycle between notes in the copied list @{2026-04-09}
 - What's up with the coloured strip on the left? @{2026-02-16}
 	- This strip reflects the age of a note. New notes are bright, and as they get older they slowly fade @{2026-02-16}
 - Flashcards @{2026-03-05}

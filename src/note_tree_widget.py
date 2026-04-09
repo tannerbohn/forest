@@ -39,7 +39,8 @@ class NoteTreeWidget(Tree):
         Binding("d", "move_node('down')", "Move down", show=False),
         Binding("z", "undo()", "Undo", show=False),
         Binding("Z", "redo()", "Redo", show=False),
-        Binding("c", "cut_node()", "Cut", show=False),
+        Binding("c", "toggle_copy()", "Copy", show=True),
+        Binding("C", "jump_to_copy()", "Jump to copy", show=False),
         Binding("v", "paste_node()", "Paste", show=False),
     ]
 
@@ -60,7 +61,6 @@ class NoteTreeWidget(Tree):
         self.ICON_NODE = ""
 
         self._last_cursor = None
-        self._cut_node = None
 
         self.age_gradient = Gradient((0, "red"), (1, "black"))
 
@@ -385,6 +385,11 @@ class NoteTreeWidget(Tree):
         if not self.cursor_node:
             return
 
+        node_obj = self.cursor_node._node
+        if node_obj in self.app._copied_nodes:
+            self.app._copied_nodes.remove(node_obj)
+            self.app._refresh_copied_bar()
+
         self.note_tree.push_undo(self.cursor_node._node.parent)
         self.note_tree.delete_focus_node(self.cursor_node._node)
 
@@ -436,36 +441,35 @@ class NoteTreeWidget(Tree):
                 self.render(target_widget=parent_widget)
             self._fix_cursor_position(_node)
 
-    def action_cut_node(self):
-        if self._cut_node:
-            self._cut_node = None
-            self.app.status_bar.cut_node_text = ""
-            return
+    def action_toggle_copy(self):
         if not self.cursor_node or not hasattr(self.cursor_node, "_node"):
             return
         node = self.cursor_node._node
         if not node.parent:
             return
-        self._cut_node = node
-        truncated = node.text[:40] + ("..." if len(node.text) > 40 else "")
-        self.app.status_bar.cut_node_text = truncated
+        self.app.toggle_copy(node)
+        self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
+
+    def action_jump_to_copy(self):
+        self.app.jump_to_next_copy()
 
     def action_paste_node(self):
-        if not self._cut_node or not self.cursor_node:
+        if not self.app._copied_nodes or not self.cursor_node:
             return
+        source = self.app._copied_nodes[-1]
         destination = self.cursor_node._node
-        if destination == self._cut_node:
+        if destination == source:
             return
-        self.note_tree.push_undo(self._cut_node.parent)
+        self.note_tree.push_undo(source.parent)
         self.note_tree.push_undo(destination)
-        destination.paste_node_here(self._cut_node)
+        destination.paste_node_here(source)
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
-        pasted_node = self._cut_node
-        self._cut_node = None
-        self.app.status_bar.cut_node_text = ""
+        self.app._copied_nodes.pop()
+        self.app._copy_jump_index = None
+        self.app._refresh_copied_bar()
         self.render()
-        self._fix_cursor_position(pasted_node)
+        self._fix_cursor_position(source)
 
     def on_resize(self, event) -> None:
         new_size = event.size
@@ -751,12 +755,16 @@ class NoteTreeWidget(Tree):
             age_char = "    "
             age_segment = Segment(age_char)
             if line.path[-1]._node:
-                if line.path[
-                    -1
-                ].label.plain.strip() and self.note_tree.determine_if_bookmarked(
-                    line.path[-1]._node
-                ):
-                    age_char = "▎💠 "  #
+                _n = line.path[-1]._node
+                is_copied = _n in self.app._copied_nodes
+                is_bookmarked = self.note_tree.determine_if_bookmarked(_n)
+                if line.path[-1].label.plain.strip():
+                    if is_copied:
+                        age_char = "▎📍 "
+                    elif is_bookmarked:
+                        age_char = "▎💠 "
+                    else:
+                        age_char = "▎   "
                 else:
                     age_char = "▎   "
                 age_days = line.path[-1]._node.get_days_old()

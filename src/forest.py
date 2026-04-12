@@ -7,6 +7,7 @@ import textwrap
 from datetime import datetime
 
 from rich.text import Text
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.color import Gradient
@@ -14,17 +15,11 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.suggester import Suggester, SuggestFromList
 from textual.theme import Theme
-from textual.widgets import (
-    DataTable,
-    Footer,
-    Input,
-    Markdown,
-    ProgressBar,
-    Static,
-    Tree,
-)
+from textual.widgets import (DataTable, Footer, Input, Markdown, ProgressBar,
+                             Static, Tree)
 
 from config import Config
+from friction_input import FrictionInput
 from node import Node
 from note_tree import NoteTree
 from note_tree_widget import NoteTreeWidget
@@ -32,12 +27,8 @@ from sticky_notes import StickyNotesScreen, _parse_flashcard
 from subtrees import SUBTREES
 from themes import THEMES
 from timer import Timer
-from utils import (
-    apply_input_substitutions,
-    compose_clock_notify_contents,
-    extract_path_references,
-    play_sound_effect,
-)
+from utils import (apply_input_substitutions, compose_clock_notify_contents,
+                   extract_path_references, play_sound_effect)
 
 # ============================================================================
 # CONFIGURATION
@@ -184,8 +175,9 @@ class StatusBar(Static):
 
 
 class CopiedBar(Static):
-    """A bottom panel showing copied notes, one per line. The most recently
-    copied entry (bottom) is marked with ✀ and is what `v` will paste."""
+    """A bottom panel showing copied notes, one per line. The top row is the
+    current paste target (what `v` will paste). Press `C` to cycle the paste
+    target, or `V` to move to the next copied note (also rotates the list)."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -194,20 +186,38 @@ class CopiedBar(Static):
     def render_content(self, copied_nodes: list) -> None:
         self._last_copied_nodes = copied_nodes
         if not copied_nodes:
+            self.update("")
+            self.styles.height = 0
             self.display = False
             return
         self.display = True
         self.styles.height = len(copied_nodes)
         hl = self.app.get_theme_variable_defaults().get("HL3", "red")
-        max_len = max(20, self.app.size.width - 5)
+        hint_plain = "[c]opy [v]paste [C]ycle [V]isit"
+        hint_markup = f"[dim][{hl}]\\[c]opy \\[v]paste \\[C]ycle \\[V]isit[/][/dim]"
+        width = self.size.width or self.app.size.width
+        max_len = max(20, width - 5)
+        n = len(copied_nodes)
         lines = []
         for i, node in enumerate(copied_nodes[::-1]):
-            txt = node.text[:max_len] + ("…" if len(node.text) > max_len else "")
-            marker = "v" if i == 0 else "•"
-            if i == 0:
-                lines.append(f"[reverse][{hl}]{marker}[/][/reverse] {txt}")
+            is_bottom = i == n - 1
+            # Bottom row reserves space for the right-aligned hint
+            # (marker + space + text + space-pad + hint).
+            row_max = max(1, width - len(hint_plain) - 3) if is_bottom else max_len
+            if len(node.text) > row_max:
+                txt = node.text[: max(1, row_max - 1)] + "…"
             else:
-                lines.append(f"[{hl}]{marker}[/] {txt}")
+                txt = node.text
+            marker = "v" if i == 0 else "•"
+            visible_len = 2 + len(txt)  # marker + space + text
+            if i == 0:
+                body = f"[reverse][{hl}]{marker}[/][/reverse] {txt}"
+            else:
+                body = f"[{hl}]{marker}[/] {txt}"
+            if is_bottom:
+                pad = max(1, width - visible_len - len(hint_plain))
+                body = f"{body}{' ' * pad}{hint_markup}"
+            lines.append(body)
         self.update("\n".join(lines))
 
     def on_resize(self, event) -> None:
@@ -284,8 +294,10 @@ class InfoWidget(DataTable):
                 ["h", "Cycle highlight"],
                 ["x", "Toggle #DONE"],
                 ["X", "Toggle hiding #DONE notes"],
-                ["c", "Cut (press again to cancel)"],
-                ["v", "Paste after cursor"],
+                ["c", "Copy (press again to uncopy)"],
+                ["C", "Cycle paste target (rotates list)"],
+                ["v", "Paste top of copied list after cursor"],
+                ["V", "Move to next copied note (rotates list)"],
                 ["z/Z", "Undo/redo"],
                 ["", ""],
                 ["", Text.from_markup("[b]Commands[/b]")],
@@ -630,6 +642,15 @@ class ForestApp(App):
         border: $secondary 75%;
         background: $background;
     }
+    #input-box.-friction-warn>.input--cursor {
+        background: $HL2;
+    }
+    #input-box.-friction-over>.input--cursor {
+        background: $HL3;
+    }
+    #input-box.-friction-pause>.input--cursor {
+        background: $success;
+    }
     ScrollView {
         scrollbar-size: 0 0;  /* Hides the scrollbar */
     }
@@ -705,7 +726,7 @@ class ForestApp(App):
         self.sound_effects_enabled = self.config.sound_effects_enabled
         self.timer = Timer(self)
         self._sticky_note_state = None
-        self._copied_nodes: list = []
+        self._copied_nodes: list = self.note_tree.copied_nodes
 
         self._command_history: list[str] = []
         self._history_index: int = -1
@@ -720,6 +741,8 @@ class ForestApp(App):
 
         if self.config.auto_save and self.config.auto_save_interval > 0:
             self.set_interval(self.config.auto_save_interval, self._auto_save)
+
+        self._refresh_copied_bar()
 
         # self.notify("It's an older code, sir, but it checks out.")
 
@@ -744,7 +767,9 @@ class ForestApp(App):
 
         self.command_suggester = MultiPurposeSuggester(mode="command")
         self.edit_suggester = MultiPurposeSuggester(mode="edit")
-        self.input_widget = Input(id="input-box", suggester=self.command_suggester)
+        self.input_widget = FrictionInput(
+            id="input-box", suggester=self.command_suggester
+        )
         yield self.input_widget
 
         self.note_tree_widget = NoteTreeWidget(note_tree=self.note_tree, id="note-tree")
@@ -776,24 +801,44 @@ class ForestApp(App):
             self._copied_nodes.remove(node)
         else:
             self._copied_nodes.append(node)
+        self.note_tree.has_unsaved_operations = True
+        self.status_bar.needs_saving = True
         self._refresh_copied_bar()
+
+    def _prune_copied_nodes(self) -> bool:
+        live_ids = {id(n) for n in self.note_tree.get_node_list(only_visible=False)}
+        self._copied_nodes[:] = [n for n in self._copied_nodes if id(n) in live_ids]
+        return bool(self._copied_nodes)
+
+    def _rotate_copied_nodes(self) -> None:
+        # Move current top (last) to the front so the next row becomes the new top
+        self._copied_nodes[:] = [self._copied_nodes[-1]] + self._copied_nodes[:-1]
+        self.note_tree.has_unsaved_operations = True
+        self.status_bar.needs_saving = True
 
     def jump_to_next_copy(self) -> None:
         if not self._copied_nodes:
             self.notify("No copied notes.")
             return
-        live_ids = {id(n) for n in self.note_tree.get_node_list(only_visible=False)}
-        self._copied_nodes = [n for n in self._copied_nodes if id(n) in live_ids]
-        if not self._copied_nodes:
+        if not self._prune_copied_nodes():
             self._refresh_copied_bar()
             return
-        # Rotate: move current top (last) to the front so the next entry becomes top
-        self._copied_nodes = [self._copied_nodes[-1]] + self._copied_nodes[:-1]
         target = self._copied_nodes[-1]
+        self._rotate_copied_nodes()
         self.note_tree_widget.update_location(
             context_node=target.parent if target.parent else target,
             line_node=target,
         )
+        self._refresh_copied_bar()
+
+    def cycle_copy_target(self) -> None:
+        if not self._copied_nodes:
+            self.notify("No copied notes.")
+            return
+        if not self._prune_copied_nodes():
+            self._refresh_copied_bar()
+            return
+        self._rotate_copied_nodes()
         self._refresh_copied_bar()
 
     def _refresh_copied_bar(self) -> None:
@@ -829,14 +874,48 @@ class ForestApp(App):
         # input_widget.id = f"input-{id(node)}"
         self.input_widget.suggester = self.edit_suggester
         self.input_widget.display = True
+        self.input_widget.reset()
         self.input_widget.value = label_text
         self.input_widget.placeholder = ""
         self.input_widget.focus()
         self.input_widget.border_title = "Edit note"
+        self._update_length_feedback(len(label_text))
 
     def action_cycle_side_panel(self):
         logging.info("action_cycle_side_panel called")
         self.info_widget.cycle_mode()
+
+    def _update_length_feedback(self, n: int) -> None:
+        iw = self.input_widget
+        if not self.config.friction_length_limit_enabled:
+            self._clear_length_feedback()
+            return
+        limit = self.config.friction_soft_limit
+        if limit <= 0:
+            self._clear_length_feedback()
+            return
+        ratio = n / limit
+        over = ratio >= 1.0
+        warn = ratio >= 0.7 and not over
+        iw.set_class(warn, "-friction-warn")
+        iw.set_class(over, "-friction-over")
+        if over:
+            color = self.get_theme_variable_defaults().get("HL3") or "red"
+        elif warn:
+            color = self.get_theme_variable_defaults().get("HL2") or "yellow"
+        else:
+            color = "dim"
+        iw.border_subtitle = f"[{color}]{n}[/{color}]"
+
+    def _clear_length_feedback(self) -> None:
+        iw = self.input_widget
+        iw.border_subtitle = None
+        iw.remove_class("-friction-warn", "-friction-over")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if not self._node_being_edited:
+            return
+        self._update_length_feedback(len(event.value))
 
     def on_input_submitted(self, event):
         logging.info(f"INPUT SUBMITTED: {event}")
@@ -854,6 +933,8 @@ class ForestApp(App):
                 self.note_tree.has_unsaved_operations = True
 
                 self._node_being_edited = None
+                self._clear_length_feedback()
+                self.input_widget.reset()
 
                 # input_widget.remove()
                 # self.input_widget.clear()
@@ -864,6 +945,8 @@ class ForestApp(App):
             else:
                 # TODO:
                 self._node_being_edited = None
+                self._clear_length_feedback()
+                self.input_widget.reset()
                 self.input_widget.display = False
                 self.input_widget.value = ""
                 self.note_tree_widget.focus()
@@ -1148,32 +1231,6 @@ class ForestApp(App):
                         self.push_screen(screen, callback=on_dismiss)
                 else:
                     self.notify("No sticky note board to recover.")
-            # elif "+ " in cmd_str:
-            #     # Quick add: <location hint>+ <note text>
-            #     plus_idx = cmd_str.index("+ ")
-            #     hint_str = cmd_str[:plus_idx].strip()
-            #     note_text = cmd_str[plus_idx + 2 :].strip()
-
-            #     if hint_str and note_text:
-            #         matching_nodes = self.note_tree.find_by_query(
-            #             hint_str, global_scope=True, match_path=True
-            #         )
-            #         if matching_nodes:
-            #             target_node = matching_nodes[0]
-            #             self.note_tree.push_undo(target_node)
-            #             note_text = apply_input_substitutions(note_text)
-            #             new_node = target_node.add_child(note_text)
-            #             self.note_tree.index_nodes()
-            #             self.note_tree.update_visible_node_list()
-            #             self.note_tree.has_unsaved_operations = True
-
-            #             # self.note_tree_widget.update_location(
-            #             #     context_node=target_node, line_node=new_node
-            #             # )
-            #             path_str = target_node.get_path_string(width=100)
-            #             self.notify(f"Added to: {path_str}")
-            #         else:
-            #             self.notify("No matching node found")
 
         self.input_widget.clear()
         self.input_widget.display = False
@@ -1209,8 +1266,10 @@ class ForestApp(App):
             )
 
         if event.key == "escape" and self.input_widget.display:
+            self.input_widget.reset()
             self.input_widget.display = False
             self.input_widget.value = ""
+            self._clear_length_feedback()
             self._node_being_edited = None
             self._history_index = -1
             self.note_tree_widget.focus()

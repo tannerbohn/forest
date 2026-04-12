@@ -40,8 +40,9 @@ class NoteTreeWidget(Tree):
         Binding("z", "undo()", "Undo", show=False),
         Binding("Z", "redo()", "Redo", show=False),
         Binding("c", "toggle_copy()", "Copy", show=True),
-        Binding("C", "jump_to_copy()", "Jump to copy", show=False),
+        Binding("C", "cycle_copy()", "Cycle copy target", show=False),
         Binding("v", "paste_node()", "Paste", show=False),
+        Binding("V", "jump_to_copy()", "Move to next copied note", show=False),
     ]
 
     def __init__(self, note_tree: NoteTree, id: str):
@@ -452,6 +453,9 @@ class NoteTreeWidget(Tree):
 
     def action_jump_to_copy(self):
         self.app.jump_to_next_copy()
+
+    def action_cycle_copy(self):
+        self.app.cycle_copy_target()
 
     def action_paste_node(self):
         if not self.app._copied_nodes or not self.cursor_node:

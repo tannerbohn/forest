@@ -29,6 +29,8 @@ class NoteTree:
         self.journal = None
         self.bookmarks: dict[int, Node] = {}
         self.bookmark_last_use_times: dict[int, datetime] = {}
+        self.copied_nodes: list[Node] = []
+        copied_by_index: dict[int, Node] = {}
         context_node = None
 
         cur_node = self.root
@@ -49,6 +51,7 @@ class NoteTree:
 
             creation_time = datetime.now()
             bookmark_slot = None
+            copied_index = None
             is_context = False
 
             meta_match = METADATA_RE.search(text)
@@ -61,6 +64,8 @@ class NoteTree:
                     for part in parts[1:]:
                         if part.startswith("b") and part[1:].isdigit():
                             bookmark_slot = int(part[1:])
+                        elif part.startswith("c") and part[1:].isdigit():
+                            copied_index = int(part[1:])
                         elif part == "x":
                             is_context = True
 
@@ -83,10 +88,14 @@ class NoteTree:
             if bookmark_slot is not None:
                 self.bookmarks[bookmark_slot] = cur_node
                 self.bookmark_last_use_times[bookmark_slot] = datetime.now()
+            if copied_index is not None:
+                copied_by_index[copied_index] = cur_node
             if is_context:
                 context_node = cur_node
 
             prev_depth = depth
+
+        self.copied_nodes = [node for _, node in sorted(copied_by_index.items())]
 
         node_list = self.index_nodes()
 
@@ -117,6 +126,11 @@ class NoteTree:
                 for slot, bm_node in self.bookmarks.items():
                     if bm_node == node:
                         meta_parts.append(f"b{slot}")
+                        break
+
+                for i, copied_node in enumerate(self.copied_nodes):
+                    if copied_node == node:
+                        meta_parts.append(f"c{i}")
                         break
 
                 if node == self.context_node:

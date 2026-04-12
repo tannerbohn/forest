@@ -11,6 +11,10 @@ DEFAULT_CONFIG = {
     "undo_depth": 50,
     "auto_save": True,
     "auto_save_interval": 5,
+    "friction_length_limit_enabled": True,
+    "friction_soft_limit": 200,
+    "friction_rate_limit_enabled": False,
+    "friction_min_interval_ms": 80,
 }
 
 
@@ -88,3 +92,19 @@ class Config:
     @property
     def auto_save_interval(self):
         return self.get("auto_save_interval", 5)
+
+    @property
+    def friction_length_limit_enabled(self):
+        return self.get("friction_length_limit_enabled", True)
+
+    @property
+    def friction_soft_limit(self):
+        return self.get("friction_soft_limit", 200)
+
+    @property
+    def friction_rate_limit_enabled(self):
+        return self.get("friction_rate_limit_enabled", False)
+
+    @property
+    def friction_min_interval_ms(self):
+        return self.get("friction_min_interval_ms", 80)

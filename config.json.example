@@ -5,5 +5,9 @@
     "location": "New York",
     "undo_depth": 10,
     "auto_save": false,
-    "auto_save_interval": 5
+    "auto_save_interval": 5,
+    "friction_length_limit_enabled": true,
+    "friction_soft_limit": 200,
+    "friction_rate_limit_enabled": false,
+    "friction_min_interval_ms": 80
 }

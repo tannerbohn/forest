@@ -50,9 +50,10 @@
 - Side panel @{2026-02-16}
 	- Press ` to cycle through the side panel views (bookmarks, similar notes) or hide it @{2026-02-16}
 - Copying and Pasting @{2026-04-09}
-	- Press "c" to add a note to the top of the copied list (will appear at the bottom). Press "c" again to remove from the list. @{2026-04-09}
-	- If you move to another location and press "v", the top copied note will be pasted to that location (as a child of the cursor note) @{2026-04-09}
-	- Press "C" to cycle between notes in the copied list @{2026-04-09}
+	- Press "c" to add the cursor note to the top of the copied list. Press "c" again to remove it. @{2026-04-09}
+	- Press "v" to paste the top of the copied list as a child of the cursor note @{2026-04-09}
+	- Press "C" to cycle the paste target (rotates the copied list without moving the cursor) @{2026-04-09}
+	- Press "V" to move to the next copied note (also rotates the list, so the visited note becomes the new paste target) @{2026-04-09}
 - What's up with the coloured strip on the left? @{2026-02-16}
 	- This strip reflects the age of a note. New notes are bright, and as they get older they slowly fade @{2026-02-16}
 - Flashcards @{2026-03-05}

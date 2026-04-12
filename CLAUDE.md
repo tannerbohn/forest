@@ -22,6 +22,10 @@ Forest uses `config.json` in the project root for settings:
 - `auto_save` (boolean): Enable/disable periodic auto-save (default: true)
 - `auto_save_interval` (integer): Seconds between auto-save checks (default: 5)
 - `max_recent_contexts` (integer): Max number of recent context visits to track (default: 5)
+- `friction_length_limit_enabled` (boolean): Show a live character count in the edit input border, with color escalating as the count approaches `friction_soft_limit`. Submission is never blocked. Default: true
+- `friction_soft_limit` (integer): Soft character limit for note edits. Below 70% of this value the count is dim, between 70%–100% it shows the warning color, and at/over 100% it shows the strong warning color. Default: 200
+- `friction_rate_limit_enabled` (boolean): When editing a note, characters typed faster than `friction_min_interval_ms` are queued and released one by one with that delay (no characters are lost). Slow, deliberate typing is unaffected. Backspace, arrows, tab, enter, and paste flush any pending queue before acting. Command mode is never throttled. Default: false
+- `friction_min_interval_ms` (integer): Minimum milliseconds between released characters when the typing delay is on. Acts as both the per-character lag for queued chars and the threshold above which immediate insertion is allowed. Default: 80
 
 If `config.json` is missing, Forest uses defaults (sounds enabled, "forest" theme, INFO logging). Copy `config.json.example` to `config.json` to customize settings.
 

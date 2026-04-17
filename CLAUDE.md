@@ -21,11 +21,8 @@ Forest uses `config.json` in the project root for settings:
 - `undo_depth` (integer): Max number of undo steps (default: 50)
 - `auto_save` (boolean): Enable/disable periodic auto-save (default: true)
 - `auto_save_interval` (integer): Seconds between auto-save checks (default: 5)
-- `max_recent_contexts` (integer): Max number of recent context visits to track (default: 5)
-- `friction_length_limit_enabled` (boolean): Show a live character count in the edit input border, with color escalating as the count approaches `friction_soft_limit`. Submission is never blocked. Default: true
-- `friction_soft_limit` (integer): Soft character limit for note edits. Below 70% of this value the count is dim, between 70%–100% it shows the warning color, and at/over 100% it shows the strong warning color. Default: 200
-- `friction_rate_limit_enabled` (boolean): When editing a note, characters typed faster than `friction_min_interval_ms` are queued and released one by one with that delay (no characters are lost). Slow, deliberate typing is unaffected. Backspace, arrows, tab, enter, and paste flush any pending queue before acting. Command mode is never throttled. Default: false
-- `friction_min_interval_ms` (integer): Minimum milliseconds between released characters when the typing delay is on. Acts as both the per-character lag for queued chars and the threshold above which immediate insertion is allowed. Default: 80
+- `margin_width_pct` (integer, 0-90): Percentage of horizontal space to leave empty around the note tree, split evenly between left and right (default: 0)
+- `margin_min_tree_width` (integer): Minimum tree width in cells; margins are dropped when applying them would shrink the tree below this (default: 80)
 
 If `config.json` is missing, Forest uses defaults (sounds enabled, "forest" theme, INFO logging). Copy `config.json.example` to `config.json` to customize settings.
 
@@ -72,6 +69,14 @@ python3 src/forest.py trees/my_new_tree.txt
 - Loads settings from `config.json` in project root
 - Falls back to defaults if config file missing
 - Manages: sound effects, theme, log level
+
+**Widgets (widgets/)**: Extracted UI components, each with own `DEFAULT_CSS`
+- **StatusBar**: Reactive status line (context path, save state, timer, search progress)
+- **CopiedBar**: Copied notes display + copy/paste/cycle logic (manages the copied node list)
+- **InfoSidebar**: DataTable-based side panel (bookmarks, perpetual journal, search results, help)
+- **MultiPurposeSuggester**: Auto-completion suggester for command and edit modes (in `suggesters.py`)
+
+**SearchState (search_state.py)**: Dataclass encapsulating search mode state (matches, index, query, pre-search position)
 
 ### Application Flow
 
@@ -156,17 +161,17 @@ python3 src/forest.py trees/my_new_tree.txt
 - `{NOW}`: Replaced with current timestamp `[YYYY-MM-DD HH:MM]`
 
 ### Sound Effects
-- Audio feedback for various actions (collapse, delete, toggle done, timer, etc.)
-- Multiple sound variants per action, randomly selected
+- Audio feedback for opening a file and timer events
 
 ## File Organization
 
 ```
 src/
-  forest.py           - Main app, ForestApp class, StatusBar, InfoWidget
+  forest.py           - Main app (ForestApp class, keybindings, command dispatch)
   note_tree.py        - NoteTree class (data model and persistence)
   node.py             - Node class (single note logic)
   note_tree_widget.py - NoteTreeWidget class (UI rendering)
+  search_state.py     - SearchState dataclass (search mode state)
   sound_effects.py    - SoundEffects class (audio feedback system)
   timer.py            - Timer class (countdown timer with repeats)
   config.py           - Config class (settings management)
@@ -174,6 +179,11 @@ src/
   utils.py            - Helper functions (trigram search, substitutions)
   subtrees.py         - Predefined note templates
   themes.py           - Color theme definitions
+  widgets/
+    status_bar.py     - StatusBar (context path, save indicator, timer)
+    copied_bar.py     - CopiedBar (copied notes list + copy/paste logic)
+    info_sidebar.py   - InfoSidebar (bookmarks, journal, search results, help)
+    suggesters.py     - MultiPurposeSuggester (command/edit auto-completion)
 
 trees/
   intro.txt           - Example/intro tree

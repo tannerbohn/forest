@@ -15,7 +15,7 @@ forest = Theme(
     primary="#2b2418",  # warm brown for selected line in info table
     secondary="#18aee9",  # same as HL1
     foreground="#d0c6a8",  # aged parchment by firelight
-    background=forest_bkg,  # deep soil
+    background=forest_bkg,  # background margins color
     surface=forest_bkg,  # main background
     panel="#2a2215",  # warm bark-brown header/footer
     variables={
@@ -41,6 +41,45 @@ forest = Theme(
         "SNBG4": "#c4d4a8",  # sage lichen
         "SNBG5": "#88b8c0",  # misty creek
         "SNBGR": "#2a2215",  # warm bark (matches panel)
+    },
+)
+
+
+# ============================================================================
+# FOREST LIGHT - warm cozy forest, light mode analog
+# ============================================================================
+forest_light_bkg = "#d4c7ae"  # sunlit parchment
+forest_light = Theme(
+    name="forest_light",
+    primary="#c4b898",  # warm tan for selected line in info table
+    secondary="#0878b8",  # same as HL1
+    foreground="#2a2215",  # dark bark text
+    background=forest_light_bkg,  # sunlit parchment
+    surface=forest_light_bkg,  # main background
+    panel="#bfb49a",  # warm bark/linen header/footer
+    variables={
+        "block-cursor-text-style": "none",
+        "block-cursor-blurred-text-style": "none",
+        "footer-key-foreground": "#2a2215",
+        "input-selection-background": "#2a2215 15%",
+        "dim-text": "#a89878",  # faded parchment - completed notes
+        "HL1": "#0878b8",  # vivid cerulean - primary highlight
+        "HL2": "#a68520",  # deeper gold - ideas
+        "HL3": "#b84f20",  # deeper ember - high importance
+        "cursor-arrow": "#2a2215",  # dark bark indicator
+        "default-arrow": "#b8a882",  # lighter warm brown line marker
+        "age-color-0": "#5a8a3e",  # deeper green - fresh notes
+        "age-color-1": "#a89870",  # lighter bark
+        "age-color-2": "#c8c0a8",  # fading into background
+        "age-column-bg": forest_light_bkg,  # age strip background
+        "find-text-bg": "#c8b878",  # warm amber background for :f matches
+        "SNBG0": "#d8c8a0",  # birch bark parchment
+        "SNBG1": "#9cc88c",  # moss / fern frond
+        "SNBG2": "#e8c060",  # honey lamplight
+        "SNBG3": "#d89878",  # autumn terracotta
+        "SNBG4": "#c4d4a8",  # sage lichen
+        "SNBG5": "#88b8c0",  # misty creek
+        "SNBGR": "#bfb49a",  # warm bark (matches panel)
     },
 )
 
@@ -88,6 +127,7 @@ verve = Theme(
 # All available themes - these will be registered with Textual
 THEMES = {
     "forest": forest,
+    "forest_light": forest_light,
     "verve": verve,
 }
 

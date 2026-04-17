@@ -26,6 +26,7 @@ class NoteTree:
             lines = f.read().splitlines()
 
         self.hide_done = False
+        self.hide_archive = True
         self.journal = None
         self.bookmarks: dict[int, Node] = {}
         self.bookmark_last_use_times: dict[int, datetime] = {}
@@ -152,6 +153,7 @@ class NoteTree:
         self.visible_node_list = self.context_node.get_node_list(
             only_visible=True,
             hide_done=self.hide_done,
+            hide_archive=self.hide_archive,
         )
         self.context_node.is_collapsed = was_collapsed
 
@@ -264,14 +266,16 @@ class NoteTree:
                     break
 
     def index_nodes(self):
-        node_list = self.get_node_list(only_visible=False)
+        node_list = self.root.get_node_list(only_visible=False)
         for i, node in enumerate(node_list):
             node.index = i
         return node_list
 
     def get_node_list(self, only_visible=False):
         return self.root.get_node_list(
-            only_visible=only_visible, hide_done=self.hide_done
+            only_visible=only_visible,
+            hide_done=self.hide_done,
+            hide_archive=self.hide_archive,
         )
 
     def contextual_add_new_note(self, focus_node):
@@ -289,8 +293,8 @@ class NoteTree:
         # return new_node, mode
 
         if new_node:
-            # self.focus_index += 1
-            new_node.text = "NEW NODE"  # start_edit_mode()
+            # TODO: choose default new node text based on content of parent?
+            new_node.text = random.choice("🌿🍃🍀🍁🍂🌲🌳🌴☘🌱")
             self.index_nodes()
             self.update_visible_node_list()
             self.has_unsaved_operations = True
@@ -554,7 +558,9 @@ class NoteTree:
             nodes = self.get_node_list()
         else:
             nodes = self.context_node.get_node_list(
-                only_visible=False, hide_done=self.hide_done
+                only_visible=False,
+                hide_done=self.hide_done,
+                hide_archive=self.hide_archive,
             )
 
         if match_path:
@@ -590,7 +596,9 @@ class NoteTree:
         sorted by similarity descending.  lca_distance and is_in_context are
         metadata for display (dimming out-of-context results, etc.).
         """
-        all_nodes = self.root.get_node_list(only_visible=False)
+        all_nodes = self.root.get_node_list(
+            only_visible=False, hide_archive=self.hide_archive
+        )
         nodes = [
             nd
             for nd in all_nodes

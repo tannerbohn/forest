@@ -46,6 +46,10 @@
 		- If multiple [[PATH]] references exist, use :run 0, :run 1, etc. @{2026-02-16}
 	- :random jumps to a random note in the current context, :random* jumps to a random note in the whole tree @{2026-03-06}
 	- :insert <name> inserts a predefined template subtree @{2026-02-16}
+	- :archive set tags the cursor note with #ARCHIVE, permanently hiding it (and its children) from view while still saving it to disk @{2026-04-17}
+		- :archive unset removes the #ARCHIVE tag @{2026-04-17}
+		- :archive show reveals archived branches for the session (an Ⓐ appears in the status bar); :archive hide returns to the default hidden state @{2026-04-17}
+		- archived notes are excluded from search, random jump, and sticky notes as long as :archive hide is in effect @{2026-04-17}
 	- :help shows the help panel @{2026-02-16}
 - Side panel @{2026-02-16}
 	- Press ` to cycle through the side panel views (bookmarks, similar notes) or hide it @{2026-02-16}

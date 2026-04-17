@@ -1,3 +1,4 @@
+import math
 import random
 import re
 import textwrap
@@ -98,6 +99,8 @@ class NoteTreeWidget(Tree):
 
         # since this could be part of a multiline, start from the plain label
         text = widget_node.label.plain
+        # strip any previously-appended collapsed-size dots so they don't accumulate
+        text = re.sub(r" •+$", "", text)
         if not text:
             return
         if not hasattr(widget_node, "_node"):
@@ -172,6 +175,30 @@ class NoteTreeWidget(Tree):
 
         if _node.depth == self.note_tree.context_node.depth + 1:
             text = f"[bold]{text}[/bold]"
+
+        if (
+            _node.is_collapsed
+            and _node.children
+            and widget_node
+            == getattr(widget_node, "_last_widget_of_multiline", widget_node)
+        ):
+            descendants = (
+                len(
+                    _node.get_node_list(
+                        only_visible=False,
+                        hide_done=False,
+                        hide_archive=self.note_tree.hide_archive,
+                    )
+                )
+                - 1
+            )
+            if descendants > 0:
+                dot_count = min(4, max(1, int(2 * math.log10(descendants + 1))))
+                if _node.is_done():
+                    text += f" [dim]{'•' * dot_count}[/dim]"
+                else:
+                    text += f" {'•' * dot_count}"
+
         text = arrow_str + text
 
         try:
@@ -200,9 +227,13 @@ class NoteTreeWidget(Tree):
             if is_done and self.note_tree.hide_done:
                 continue
 
+            if self.note_tree.hide_archive and "#ARCHIVE" in node.text:
+                continue
+
             # 2 for arrow + space
             # 4 for age strip + space
-            available_width = self.app.size.width - (self.guide_depth * depth + 2 + 4)
+            widget_width = self.size.width or self.app.size.width
+            available_width = max(1, widget_width - (self.guide_depth * depth + 2 + 4))
 
             # if node.is_collapsed:
             #     text += " [•••]"
@@ -387,9 +418,9 @@ class NoteTreeWidget(Tree):
             return
 
         node_obj = self.cursor_node._node
-        if node_obj in self.app._copied_nodes:
-            self.app._copied_nodes.remove(node_obj)
-            self.app._refresh_copied_bar()
+        if node_obj in self.app.copied_bar.nodes:
+            self.app.copied_bar.nodes.remove(node_obj)
+            self.app.copied_bar.render_content(self.app.copied_bar.nodes)
 
         self.note_tree.push_undo(self.cursor_node._node.parent)
         self.note_tree.delete_focus_node(self.cursor_node._node)
@@ -448,19 +479,19 @@ class NoteTreeWidget(Tree):
         node = self.cursor_node._node
         if not node.parent:
             return
-        self.app.toggle_copy(node)
+        self.app.copied_bar.toggle(node)
         self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
 
     def action_jump_to_copy(self):
-        self.app.jump_to_next_copy()
+        self.app.copied_bar.jump_to_next()
 
     def action_cycle_copy(self):
-        self.app.cycle_copy_target()
+        self.app.copied_bar.cycle_target()
 
     def action_paste_node(self):
-        if not self.app._copied_nodes or not self.cursor_node:
+        if not self.app.copied_bar.nodes or not self.cursor_node:
             return
-        source = self.app._copied_nodes[-1]
+        source = self.app.copied_bar.nodes[-1]
         destination = self.cursor_node._node
         if destination == source:
             return
@@ -469,8 +500,8 @@ class NoteTreeWidget(Tree):
         destination.paste_node_here(source)
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
-        self.app._copied_nodes.pop()
-        self.app._refresh_copied_bar()
+        self.app.copied_bar.nodes.pop()
+        self.app.copied_bar.render_content(self.app.copied_bar.nodes)
         self.render()
         self._fix_cursor_position(source)
 
@@ -509,6 +540,7 @@ class NoteTreeWidget(Tree):
         current_node_list = self.note_tree.context_node.get_node_list(
             only_visible=False,  # need false here in case the context node is collapsed
             hide_done=self.note_tree.hide_done,
+            hide_archive=self.note_tree.hide_archive,
         )[1:]
         # if the parent is already in the current context.. just switch lines
         if self.cursor_node._node.parent in current_node_list:
@@ -524,6 +556,18 @@ class NoteTreeWidget(Tree):
                 self.render()
 
                 self._fix_cursor_position(_node)
+
+    def on_mouse_scroll_down(self, event):
+        event.prevent_default()
+        event.stop()
+        # for _ in range(3):
+        self.action_cursor_down()
+
+    def on_mouse_scroll_up(self, event):
+        event.prevent_default()
+        event.stop()
+        # for _ in range(3):
+        self.action_cursor_up()
 
     def action_cursor_down(self):
         if not self.note_tree.context_node.children:
@@ -592,9 +636,13 @@ class NoteTreeWidget(Tree):
 
     def jump_to_random(self, global_scope=False):
         if global_scope:
-            nodes = self.note_tree.root.get_node_list(only_visible=False)
+            nodes = self.note_tree.root.get_node_list(
+                only_visible=False, hide_archive=self.note_tree.hide_archive
+            )
         else:
-            nodes = self.note_tree.context_node.get_node_list(only_visible=False)
+            nodes = self.note_tree.context_node.get_node_list(
+                only_visible=False, hide_archive=self.note_tree.hide_archive
+            )
         nodes = [
             n
             for n in nodes
@@ -759,11 +807,11 @@ class NoteTreeWidget(Tree):
             age_segment = Segment(age_char)
             if line.path[-1]._node:
                 _n = line.path[-1]._node
-                is_copied = _n in self.app._copied_nodes
+                is_copied = _n in self.app.copied_bar.nodes
                 is_bookmarked = self.note_tree.determine_if_bookmarked(_n)
                 if line.path[-1].label.plain.strip():
                     if is_copied:
-                        age_char = "▎📍 "
+                        age_char = "▎🔹 "
                     elif is_bookmarked:
                         age_char = "▎💠 "
                     else:

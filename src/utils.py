@@ -56,7 +56,7 @@ MONTH_ORDER = [
 ]
 
 
-def compose_clock_notify_contents(location=None):
+def compose_clock_notify_contents():
     now = datetime.now()
     tz = now.astimezone().strftime("%Z")
     title = now.strftime("%I:%M %p").lstrip("0") + " " + tz
@@ -67,29 +67,7 @@ def compose_clock_notify_contents(location=None):
     total_days = (
         366 if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 365
     )
-    days_remaining = total_days - day_of_year
-
     body = now.strftime("%a, %b %d, %Y")
-    # body += f"\n{year} is {100*day_of_year/total_days:.1f}% over."
-
-    # if location:
-    #     title = f"{title} - {location}"
-    #     try:
-    #         loc_encoded = urllib.request.quote(location)
-    #         url = f"https://wttr.in/{loc_encoded}?format=%C+%t+%m+%S+%s"
-    #         resp = urllib.request.urlopen(url, timeout=3)
-    #         parts = resp.read().decode().strip()
-    #         # Format: "Condition +Temp MoonEmoji Sunrise Sunset"
-    #         # Split from the right to isolate sunrise/sunset times
-    #         tokens = parts.rsplit(" ", 2)
-    #         if len(tokens) == 3:
-    #             weather_and_moon, sunrise, sunset = tokens
-    #             body += f"\n{location}: {weather_and_moon}"
-    #             body += f"\nSunrise {sunrise}  Sunset {sunset}"
-    #         else:
-    #             body += f"\n{location}: {parts}"
-    #     except Exception as e:
-    #         logging.error(f"Failed to get weather: {e}")
 
     return title, body
 
@@ -98,7 +76,7 @@ def extract_path_references(text: str) -> list[str]:
     """Extract all ((path)) references from text.
 
     Returns:
-        List of path strings found within (( ))
+        List of path strings found within [[ ]]
     """
     return re.findall(r"\[\[(.*?)\]\]", text)
 

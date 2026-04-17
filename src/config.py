@@ -11,10 +11,8 @@ DEFAULT_CONFIG = {
     "undo_depth": 50,
     "auto_save": True,
     "auto_save_interval": 5,
-    "friction_length_limit_enabled": True,
-    "friction_soft_limit": 200,
-    "friction_rate_limit_enabled": False,
-    "friction_min_interval_ms": 80,
+    "margin_width_pct": 0,
+    "margin_min_tree_width": 80,
 }
 
 
@@ -78,10 +76,6 @@ class Config:
         return self.get("log_level", "INFO")
 
     @property
-    def location(self):
-        return self.get("location", None)
-
-    @property
     def undo_depth(self):
         return self.get("undo_depth", 50)
 
@@ -94,17 +88,9 @@ class Config:
         return self.get("auto_save_interval", 5)
 
     @property
-    def friction_length_limit_enabled(self):
-        return self.get("friction_length_limit_enabled", True)
+    def margin_width_pct(self):
+        return max(0, min(90, self.get("margin_width_pct", 0)))
 
     @property
-    def friction_soft_limit(self):
-        return self.get("friction_soft_limit", 200)
-
-    @property
-    def friction_rate_limit_enabled(self):
-        return self.get("friction_rate_limit_enabled", False)
-
-    @property
-    def friction_min_interval_ms(self):
-        return self.get("friction_min_interval_ms", 80)
+    def margin_min_tree_width(self):
+        return max(0, self.get("margin_min_tree_width", 80))

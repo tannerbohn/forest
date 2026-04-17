@@ -174,6 +174,17 @@ class Node:
 
         return done
 
+    def is_archived(self, consider_parent=True):
+        if "#ARCHIVE" in self.text:
+            return True
+        if (
+            consider_parent
+            and self.parent
+            and self.parent.is_archived(consider_parent=True)
+        ):
+            return True
+        return False
+
     def is_highlighted(self):
         return self.highlight_index is not None
 
@@ -461,16 +472,23 @@ class Node:
         for c in self.children:
             c.show()
 
-    def get_node_list(self, only_visible=False, hide_done=False):
+    def get_node_list(self, only_visible=False, hide_done=False, hide_archive=False):
 
         if hide_done and self.is_done():
+            return []
+
+        if hide_archive and "#ARCHIVE" in self.text:
             return []
 
         l = [self]
         if (not only_visible) or (only_visible and not self.is_collapsed):
             for c in self.children:
                 l.extend(
-                    c.get_node_list(only_visible=only_visible, hide_done=hide_done)
+                    c.get_node_list(
+                        only_visible=only_visible,
+                        hide_done=hide_done,
+                        hide_archive=hide_archive,
+                    )
                 )
         return l
 

@@ -23,10 +23,11 @@ class Node:
         # TODO: find a nice way to make sure the number of highlights is synched between the palette file and this list
         self.HIGHLIGHT_HASHTAGS = [f"#HL{i+1}" for i in range(3)]
         self.highlight_index = None
-        for w in self.text.split()[-3:]:
-            if w in self.HIGHLIGHT_HASHTAGS:
-                self.highlight_index = int(w[-1]) - 1
-                break
+        if "#HL" in self.text:
+            for w in self.text.split()[-3:]:
+                if w in self.HIGHLIGHT_HASHTAGS:
+                    self.highlight_index = int(w[-1]) - 1
+                    break
 
         self.expiry_datetime = None
         self.extract_expiry()
@@ -36,6 +37,8 @@ class Node:
 
     def extract_values(self) -> None:
         self.value_dict = {}
+        if "$" not in self.text:
+            return
         for key, value in re.findall(
             r"\$([a-zA-Z_]+)\s?=\s?([\-\+]?[\d.]+)", self.text
         ):
@@ -199,8 +202,10 @@ class Node:
         return self.parent.get_expiry()
 
     def extract_expiry(self):
-        words = self.text.split()
         self.expiry_datetime = None
+        if "#T-" not in self.text:
+            return
+        words = self.text.split()
         for w in words:
             # if w.startswith("#EXPIRY-"):
             #     time_str = w.split("-", 1)[1]
@@ -242,12 +247,6 @@ class Node:
 
         if not self.is_done():
             words.append("#DONE")
-
-            if self.parent.is_well_root():
-                words = [w for w in words if not w.startswith("#due")]
-                due_datetime = self.get_well_next_due_datetime()
-                if due_datetime:
-                    words.append(f"#due={due_datetime.strftime('%Y-%m-%dT%H:%M:%S')}")
 
             # look through value dict for anything to increment or decrement
             for k, v in self.value_dict.items():
@@ -334,11 +333,6 @@ class Node:
                 )
                 text += f" ({values_str})"
 
-        if (
-            self.parent.is_well_root() and self.get_well_next_due_datetime()
-        ):  # to check if valid well item
-            text = "⏲ " + text
-
         return text
 
     def toggle_collapse(self):
@@ -346,7 +340,7 @@ class Node:
         if not self.children:
             self.is_collapsed = False
 
-    def paste_node_here(self, node):
+    def paste_node_here(self, node, as_sibling=False):
         if node == self:
             return
         # Check that self is not a descendant of node (would create a cycle)
@@ -357,10 +351,16 @@ class Node:
             ancestor = ancestor.parent
         node.parent.children.remove(node)
 
-        node.parent = self
-
-        self.children.insert(0, node)
-        self.update_child_depth()
+        if as_sibling and self.parent is not None:
+            new_parent = self.parent
+            insert_index = new_parent.children.index(self) + 1
+            new_parent.children.insert(insert_index, node)
+            node.parent = new_parent
+            new_parent.update_child_depth()
+        else:
+            node.parent = self
+            self.children.insert(0, node)
+            self.update_child_depth()
 
     def add_child(self, text, top=False, index=None):
         child = Node(self, text, self.depth + 1)
@@ -522,47 +522,6 @@ class Node:
                 all_values[k].extend(v)
 
         return all_values
-
-    def is_well_root(self) -> bool:
-        return bool(re.search(r"(^|\s)#WELL\b", self.text))
-
-    def get_well_next_due_datetime(self) -> datetime | None:
-        """If this Well task were completed now, what would the next due time be?"""
-
-        if match := re.search(r"#duration=(\d+[a-z]+)\b", self.text):
-            duration_str = match.group(1)
-            duration_seconds = extended_parse(duration_str)
-            if duration_seconds is None:
-                logger.warning(f"Invalid Well duration string: {duration_str}")
-                return None
-            return datetime.now() + timedelta(seconds=duration_seconds)
-
-        return None
-
-    def get_well_current_due_datetime(self) -> datetime | None:
-        due_datetime = None
-        if match := re.search(r"#due=(\S+)\b", self.text):
-            due_timestamp = match.group(1)
-            try:
-                due_datetime = datetime.strptime(due_timestamp, "%Y-%m-%dT%H:%M:%S")
-            except ValueError:
-                logger.warning(f"Invalid Well due timestamp: {due_timestamp}")
-        return due_datetime
-
-    def get_well_sort_value(self) -> float:
-        """Wells have their child nodes in order of how long they have been due (so incomplete things at top)"""
-
-        due_seconds = 0
-
-        if due_datetime := self.get_well_current_due_datetime():
-            # if this value is positive, it means that note has resurfaced in the Well
-            due_seconds = (datetime.now() - due_datetime).total_seconds()
-
-        return due_seconds
-
-    def check_well_status(self) -> None:
-        if self.is_done() and self.get_well_sort_value() > 0:
-            self.toggle_done()
 
 
 def lca_distance(node_a, node_b):

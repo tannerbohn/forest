@@ -4,6 +4,7 @@ import textwrap
 from datetime import datetime
 
 from rich.text import Text
+from textual.color import Color
 from textual.widgets import DataTable
 
 from utils import compose_clock_notify_contents
@@ -12,12 +13,11 @@ from utils import compose_clock_notify_contents
 class InfoSidebar(DataTable):
     DEFAULT_CSS = """
     InfoSidebar {
-        width: 30%;
         height: 100%;
-        background-tint: $panel 50%;
+        color: $foreground 50%;
+        background-tint: $panel 10%;
         display: none;
         layer: overlay;
-        dock: right;
         offset: 0 1;
     }
     """
@@ -32,6 +32,21 @@ class InfoSidebar(DataTable):
         """Initialize the DataTable with columns to prevent first-render issues."""
         self.add_columns("", "")
         self.show_header = True
+
+    def apply_layout(self, side: str, width: int):
+        self.styles.dock = side
+        self.styles.width = width
+        panel = Color.parse(self.app.theme_variables.get("panel", "#000000"))
+        # bg = Color.parse(self.app.theme_variables.get("background", "#ffffff"))
+        blended = panel  # .blend(bg, 0.5).hex
+        border = ("vkey", blended)
+        no_border = ("none", blended)
+        if side == "right":
+            self.styles.border_left = border
+            self.styles.border_right = no_border
+        else:
+            self.styles.border_right = border
+            self.styles.border_left = no_border
 
     def cycle_mode(self):
         old_index = self.mode_index
@@ -60,9 +75,7 @@ class InfoSidebar(DataTable):
         rows = [
             [
                 "",
-                Text.from_markup(
-                    f"[italic][dim][{hl}]{title}[/{hl}] - {body}[/dim][/italic]"
-                ),
+                Text.from_markup(f"[italic]{title}[dim] - {body}[/dim][/italic]"),
             ],
             ["", ""],
         ]
@@ -275,6 +288,38 @@ class InfoSidebar(DataTable):
                 node = self.app.note_tree.bookmarks.get(index)
                 text = node.text if node else ""
                 table_rows.append([index, text])
+
+            copied_nodes = self.app.note_tree.copied_nodes
+            if copied_nodes:
+                table_rows.extend(
+                    [
+                        ["", ""],
+                        ["", Text.from_markup("[b]Copied[/b]")],
+                        ["", ""],
+                    ]
+                )
+                max_text_width = max(width - 6, 10)
+                hl1 = self.app.theme_variables.get("HL1", "white")
+                n = len(copied_nodes)
+                for i, node in enumerate(copied_nodes[::-1]):
+                    text = node.text
+                    if len(text) > max_text_width:
+                        text = text[: max_text_width - 1] + "…"
+                    marker = "v" if i == 0 else "•"
+                    table_rows.append(
+                        [
+                            Text.from_markup(f"[{hl1}]{marker}[/{hl1}]"),
+                            Text.from_markup(text),
+                        ]
+                    )
+                table_rows.append(
+                    [
+                        "",
+                        Text.from_markup(
+                            "[dim]\\[c]opy \\[v]paste \\[C]ycle \\[V]isit[/dim]"
+                        ),
+                    ]
+                )
 
             archived_roots = self._collect_archived_roots()
             if archived_roots:

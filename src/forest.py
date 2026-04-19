@@ -14,6 +14,7 @@ from textual.theme import Theme
 from textual.widgets import Footer, Input, Markdown, ProgressBar, Tree
 
 from config import Config
+from copied_list import CopiedList
 from node import Node
 from note_tree import NoteTree
 from note_tree_widget import NoteTreeWidget
@@ -23,7 +24,6 @@ from themes import THEMES
 from timer import Timer
 from utils import (apply_input_substitutions, extract_path_references,
                    play_sound_effect)
-from widgets.copied_bar import CopiedBar
 from widgets.info_sidebar import InfoSidebar
 from widgets.status_bar import StatusBar
 from widgets.suggesters import MultiPurposeSuggester
@@ -106,6 +106,7 @@ class ForestApp(App):
 
         self.sound_effects_enabled = self.config.sound_effects_enabled
         self.timer = Timer(self)
+        self.copied_list = CopiedList(self)
         self._sticky_note_state = None
 
         self._command_history: list[str] = []
@@ -151,27 +152,30 @@ class ForestApp(App):
         if self.config.auto_save and self.config.auto_save_interval > 0:
             self.set_interval(self.config.auto_save_interval, self._auto_save)
 
-        self.copied_bar.render_content(self.copied_bar.nodes)
+        self._apply_layout()
 
-        self._apply_tree_margin()
+    _MIN_TREE_WIDTH = 50
+    _DEFAULT_SIDEBAR_WIDTH = 40
 
-    def _apply_tree_margin(self):
-        pct = self.config.margin_width_pct
-        if pct <= 0:
-            self.note_tree_widget.styles.margin = (0, 0)
-            return
+    def _apply_layout(self):
+        side = self.config.margin_side
+        width = self.config.margin_width
         screen_width = self.size.width
-        available = screen_width - self.info_sidebar.size.width
-        side = max(0, int(available * pct / 200))
-        if available - 2 * side < self.config.margin_min_tree_width:
-            side = 0
-        self.note_tree_widget.styles.margin = (0, side)
+
+        if width <= 0 or screen_width - width < self._MIN_TREE_WIDTH:
+            self.note_tree_widget.styles.margin = (0, 0)
+            sidebar_width = self._DEFAULT_SIDEBAR_WIDTH
+        else:
+            if side == "left":
+                self.note_tree_widget.styles.margin = (0, 0, 0, width)
+            else:
+                self.note_tree_widget.styles.margin = (0, width, 0, 0)
+            sidebar_width = width
+
+        self.info_sidebar.apply_layout(side, sidebar_width)
 
     def on_resize(self, event):
-        # Defer until after child widgets re-layout to their new sizes.
-        # Tile-snap events can arrive with stale child sizes; deferring
-        # ensures info_sidebar.size.width reflects the new screen width.
-        self.call_after_refresh(self._apply_tree_margin)
+        self.call_after_refresh(self._apply_layout)
 
     def _auto_save(self):
         if self.note_tree.has_unsaved_operations:
@@ -185,9 +189,6 @@ class ForestApp(App):
 
         self.status_bar = StatusBar(id="status-bar")
         yield self.status_bar
-
-        self.copied_bar = CopiedBar(id="copied-bar")
-        yield self.copied_bar
 
         self.edit_suggester = MultiPurposeSuggester(mode="edit")
         self.command_suggester = MultiPurposeSuggester(mode="command")
@@ -382,10 +383,9 @@ class ForestApp(App):
                                 path_query = path_query.replace(" › ", ">").replace(
                                     " > ", ">"
                                 )
-                                matching_nodes = self.note_tree.find_by_query(
-                                    path_query, global_scope=True, match_path=True
+                                matching_nodes = self.note_tree.find_by_path_beam(
+                                    path_query
                                 )
-                                # matching_nodes = [n for n in matching_nodes if n is not node]
                                 if matching_nodes:
                                     target_node = matching_nodes[0]
                                     self.note_tree_widget.update_location(
@@ -397,7 +397,7 @@ class ForestApp(App):
                                         line_node=target_node,
                                     )
                                 else:
-                                    self.notify(f"No match found for: {path_query}")
+                                    self.notify(f"No path match for: {path_query}")
                         else:
                             self.notify("No ! command or [[path]] reference found")
             elif cmd_str == "collapse":

@@ -2,7 +2,6 @@ import copy
 import random
 import re
 import textwrap
-import time
 from datetime import datetime
 
 from node import Node, lca_distance
@@ -12,7 +11,6 @@ from utils import (MONTH_ORDER, add_subtree, convert_to_nested_list,
 
 # Matches inline metadata suffix like " @{2026-03-05,b7,x}" at end of line
 METADATA_RE = re.compile(r"\s+@\{([^}]+)\}$")
-DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}$")
 
 # import pyclip
 
@@ -37,20 +35,20 @@ class NoteTree:
         cur_node = self.root
         prev_depth = -1
 
+        _now = datetime.now()
         for l in lines:
-            if not l.strip():
+            stripped = l.strip()
+            if not stripped:
                 continue
 
             depth = len(l) - len(l.lstrip("\t"))
             if depth > prev_depth:
                 depth = prev_depth + 1
 
-            stripped = l.strip()
-
-            is_collapsed = stripped.startswith("+")
+            is_collapsed = stripped[0] == "+"
             text = stripped[2:]  # strip "+ " or "- "
 
-            creation_time = datetime.now()
+            creation_time = None
             bookmark_slot = None
             copied_index = None
             is_context = False
@@ -59,16 +57,26 @@ class NoteTree:
             if meta_match:
                 meta_str = meta_match.group(1)
                 parts = meta_str.split(",")
-                if DATE_RE.match(parts[0]):
+                p0 = parts[0]
+                if (
+                    len(p0) == 10 and p0[4] == "-" and p0[7] == "-"
+                ):  # efficient check for a YYYY-MM-DD string
                     text = text[: meta_match.start()]
-                    creation_time = datetime.strptime(parts[0], "%Y-%m-%d")
+                    try:
+                        creation_time = datetime(
+                            int(p0[:4]), int(p0[5:7]), int(p0[8:10])
+                        )  # faster than strptime
+                    except ValueError:
+                        creation_time = None
                     for part in parts[1:]:
-                        if part.startswith("b") and part[1:].isdigit():
+                        if part == "x":
+                            is_context = True
+                        elif part.startswith("b") and part[1:].isdigit():
                             bookmark_slot = int(part[1:])
                         elif part.startswith("c") and part[1:].isdigit():
                             copied_index = int(part[1:])
-                        elif part == "x":
-                            is_context = True
+            if creation_time is None:
+                creation_time = _now
 
             # Build tree structure
             if depth > prev_depth:
@@ -295,7 +303,8 @@ class NoteTree:
         if new_node:
             # TODO: choose default new node text based on content of parent?
             new_node.text = random.choice("🌿🍃🍀🍁🍂🌲🌳🌴☘🌱")
-            self.index_nodes()
+            # .index is only consumed by adopt_children_from_node during
+            # delete_single; we refresh there before the merge, so skip here.
             self.update_visible_node_list()
             self.has_unsaved_operations = True
 
@@ -343,8 +352,10 @@ class NoteTree:
         if focus_node.is_collapsed:
             focus_node.delete_branch()
         else:
+            # delete_single calls adopt_children_from_node, which sorts by
+            # .index — refresh indices first so the merge order is correct.
+            self.index_nodes()
             focus_node.delete_single()
-        self.index_nodes()
         self.has_unsaved_operations = True
         self.update_visible_node_list()
 
@@ -445,22 +456,6 @@ class NoteTree:
 
     def determine_if_bookmarked(self, node: None):
         return node in self.bookmarks.values()
-
-    def update_wells(self) -> None:
-        # locate any well nodes and update children position and statuses
-        # TODO: if we last updated wells recently, skip? maybe do in separate thread?
-        # TODO: add corresponding logic to node.toggle_done() to update hashtags
-        well_roots = [n for n in self.get_node_list() if n.is_well_root()]
-
-        for well_root in well_roots:
-            for node in well_root.children:
-                # get each node to see if the #DONE tag can be removed (if present)
-                node.check_well_status()
-
-            # sort nodes by... (now - resurface time)
-            well_root.children = sorted(
-                well_root.children, key=lambda n: -n.get_well_sort_value()
-            )
 
     def _rank_nodes_by_similarity(
         self,
@@ -579,6 +574,44 @@ class NoteTree:
             regex_prefilter=pattern,
         )
         return [node for node, _score in ranked]
+
+    def find_by_path_beam(self, query, beam_width=3, score_floor=0.15):
+        """Resolve a `[[path > to > somewhere]]` link via beam search.
+
+        Walks the tree level by level, scoring each segment against the
+        direct children of surviving candidates.  Much faster than a full
+        trigram scan on large trees, and encourages structured links
+        (each segment should plausibly name something under the previous).
+
+        Returns a list of Node matches ordered by cumulative score, or
+        an empty list if no path matches.
+        """
+        segments = [s.strip().lower() for s in query.split(">")]
+        segments = [s for s in segments if s]
+        if not segments:
+            return []
+
+        frontier = [(self.root, 0.0)]
+        for segment in segments:
+            next_candidates = []
+            for node, score_so_far in frontier:
+                for child in node.children:
+                    text = child.text.lower()
+                    if text == segment:
+                        score = 1.0
+                    elif segment in text:
+                        score = 0.7
+                    else:
+                        score = trigram_similarity(text, segment, coverage_weight=0.75)
+                    if score < score_floor:
+                        continue
+                    next_candidates.append((child, score_so_far + score))
+            if not next_candidates:
+                return []
+            next_candidates.sort(key=lambda t: -t[1])
+            frontier = next_candidates[:beam_width]
+
+        return [node for node, _score in frontier]
 
     def find_by_similarity(self, target_node, n=10):
         """Discovery of notes similar to a given note (empty :? command).

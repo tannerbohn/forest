@@ -21,8 +21,9 @@ Forest uses `config.json` in the project root for settings:
 - `undo_depth` (integer): Max number of undo steps (default: 50)
 - `auto_save` (boolean): Enable/disable periodic auto-save (default: true)
 - `auto_save_interval` (integer): Seconds between auto-save checks (default: 5)
-- `margin_width_pct` (integer, 0-90): Percentage of horizontal space to leave empty around the note tree, split evenly between left and right (default: 0)
-- `margin_min_tree_width` (integer): Minimum tree width in cells; margins are dropped when applying them would shrink the tree below this (default: 80)
+- `margin_side` (string, "left" or "right"): Side of the screen where the tree margin and InfoSidebar are placed (default: "right")
+- `margin_width` (integer): Cells reserved on `margin_side` for the tree margin and sidebar width. Dropped if it would shrink the tree below a small internal minimum; the sidebar still overlays at this width (default: 30)
+- `scroll_margin` (integer): Minimum lines kept between the cursor and the top/bottom of the tree viewport before scrolling. `0` = scroll only at the edge; large values approximate centering. Clamped to at most half the viewport (default: 5)
 
 If `config.json` is missing, Forest uses defaults (sounds enabled, "forest" theme, INFO logging). Copy `config.json.example` to `config.json` to customize settings.
 
@@ -50,7 +51,7 @@ python3 src/forest.py trees/my_new_tree.txt
 **Node (node.py)**: The fundamental data structure representing a single note
 - Hierarchical tree structure with parent/children relationships
 - Each node has: text content, depth, collapse state, creation time
-- Supports hashtags for special behaviors (#DONE, #HL1-3, #T-, #WELL, etc.)
+- Supports hashtags for special behaviors (#DONE, #HL1-3, #T-, etc.)
 - Supports value extraction ($variable=value syntax) for aggregation functions
 
 **NoteTree (note_tree.py)**: Manages the entire tree and persistence
@@ -72,9 +73,10 @@ python3 src/forest.py trees/my_new_tree.txt
 
 **Widgets (widgets/)**: Extracted UI components, each with own `DEFAULT_CSS`
 - **StatusBar**: Reactive status line (context path, save state, timer, search progress)
-- **CopiedBar**: Copied notes display + copy/paste/cycle logic (manages the copied node list)
-- **InfoSidebar**: DataTable-based side panel (bookmarks, perpetual journal, search results, help)
+- **InfoSidebar**: DataTable-based side panel (bookmarks, copied notes, archived, perpetual journal, search results, help)
 - **MultiPurposeSuggester**: Auto-completion suggester for command and edit modes (in `suggesters.py`)
+
+**CopiedList (copied_list.py)**: Non-widget helper attached to `ForestApp` as `app.copied_list`. Manages the copied node list (toggle/prune/rotate/cycle_target/jump_to_next) backed by `note_tree.copied_nodes`. The list is rendered as a section inside the InfoSidebar's bookmarks view.
 
 **SearchState (search_state.py)**: Dataclass encapsulating search mode state (matches, index, query, pre-search position)
 
@@ -98,18 +100,12 @@ python3 src/forest.py trees/my_new_tree.txt
 - Context node (`x` flag)
 - Creation date (`YYYY-MM-DD`)
 
-**Wells**: Special recurring task system using #WELL hashtag
-- Tasks have #duration= and #due= tags
-- Automatically resurface after completion based on duration
-- Sorted by how long overdue they are
-
 ## Special Features
 
 ### Hashtags
 - `#DONE`: Marks task complete, dims in UI
 - `#HL1`, `#HL2`, `#HL3`: Color highlighting
 - `#T-<duration>`: Expiring notes (e.g., #T-7d)
-- `#WELL`: Recurring task parent node
 - `#sum`, `#max`, `#min`, `#avg`: Aggregate child values
 
 ### Value System
@@ -179,10 +175,10 @@ src/
   utils.py            - Helper functions (trigram search, substitutions)
   subtrees.py         - Predefined note templates
   themes.py           - Color theme definitions
+  copied_list.py      - CopiedList helper (copy/paste/cycle logic; renders in sidebar)
   widgets/
     status_bar.py     - StatusBar (context path, save indicator, timer)
-    copied_bar.py     - CopiedBar (copied notes list + copy/paste logic)
-    info_sidebar.py   - InfoSidebar (bookmarks, journal, search results, help)
+    info_sidebar.py   - InfoSidebar (bookmarks, copied, archived, journal, search, help)
     suggesters.py     - MultiPurposeSuggester (command/edit auto-completion)
 
 trees/

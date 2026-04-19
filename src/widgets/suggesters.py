@@ -22,7 +22,7 @@ class MultiPurposeSuggester(Suggester):
 
             # Suggest hashtags
             if value.endswith("#"):
-                return value + "WELL | #T- | #sum | #max | #min | #avg"
+                return value + "T- | #sum | #max | #min | #avg"
 
             # Suggest value syntax
             if value.endswith("$"):

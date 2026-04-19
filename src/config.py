@@ -11,8 +11,9 @@ DEFAULT_CONFIG = {
     "undo_depth": 50,
     "auto_save": True,
     "auto_save_interval": 5,
-    "margin_width_pct": 0,
-    "margin_min_tree_width": 80,
+    "margin_side": "right",
+    "margin_width": 30,
+    "scroll_margin": 5,
 }
 
 
@@ -88,9 +89,14 @@ class Config:
         return self.get("auto_save_interval", 5)
 
     @property
-    def margin_width_pct(self):
-        return max(0, min(90, self.get("margin_width_pct", 0)))
+    def margin_side(self):
+        side = self.get("margin_side", "right")
+        return "left" if str(side).lower() == "left" else "right"
 
     @property
-    def margin_min_tree_width(self):
-        return max(0, self.get("margin_min_tree_width", 80))
+    def margin_width(self):
+        return max(0, int(self.get("margin_width", 30)))
+
+    @property
+    def scroll_margin(self):
+        return max(0, int(self.get("scroll_margin", 5)))

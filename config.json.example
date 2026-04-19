@@ -5,6 +5,7 @@
     "undo_depth": 10,
     "auto_save": false,
     "auto_save_interval": 5,
-    "margin_width_pct": 0,
-    "margin_min_tree_width": 80
+    "margin_side": "right",
+    "margin_width": 30,
+    "scroll_margin": 5
 }

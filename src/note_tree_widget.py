@@ -17,7 +17,7 @@ from textual.widgets import Tree
 from note_tree import NoteTree
 from subtrees import SUBTREES
 from themes import TEXT_COLOR_REGEX_LIST
-from utils import add_subtree
+from utils import add_subtree, extract_path_references
 
 logging = None
 
@@ -73,7 +73,7 @@ class NoteTreeWidget(Tree):
         """Called when the widget is added to the DOM."""
         # self._is_mounted = False
 
-        self.center_scroll = True
+        self.center_scroll = False
         self.show_guides = False
         self.guide_depth = 4
         self.show_root = False
@@ -297,31 +297,15 @@ class NoteTreeWidget(Tree):
 
         if target_widget is None:
             self.root.remove_children()  # Clear the tree before reloading
-
-            # width = self.styles.width  # this gives a fraction "1fr"
-            # width = self.app.size.width
-
-            self.note_tree.update_wells()
             self.build_tree(self.root, self.note_tree.context_node, depth=0)
-            logging.info(f"DONE building tree")
-
             self.app.status_bar.context_node = self.note_tree.context_node
-
         else:
-            # target_widget.parent.remove_children()
-            # try:
             self.build_tree(
                 target_widget.parent,
                 target_widget.parent._node,
                 depth=target_widget.parent._depth,
                 target_widget=target_widget,
             )
-            # except AttributeError as e:
-            #     logging.error(
-            #         f"Could not update tree for specified widget (defaulting to update all): {e}"
-            #     )
-            #     self.render()
-            logging.info(f"DONE updating single tree node")
 
         self.app.status_bar.needs_saving = self.note_tree.has_unsaved_operations
 
@@ -418,9 +402,10 @@ class NoteTreeWidget(Tree):
             return
 
         node_obj = self.cursor_node._node
-        if node_obj in self.app.copied_bar.nodes:
-            self.app.copied_bar.nodes.remove(node_obj)
-            self.app.copied_bar.render_content(self.app.copied_bar.nodes)
+        if node_obj in self.app.copied_list.nodes:
+            self.app.copied_list.nodes.remove(node_obj)
+            if self.app.info_sidebar.display:
+                self.app.info_sidebar.update_data()
 
         self.note_tree.push_undo(self.cursor_node._node.parent)
         self.note_tree.delete_focus_node(self.cursor_node._node)
@@ -437,7 +422,6 @@ class NoteTreeWidget(Tree):
         if not self.cursor_node:
             return
 
-        self.note_tree.update_wells()
         self.note_tree.toggle_collapse(self.cursor_node._node)
         self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
 
@@ -479,29 +463,37 @@ class NoteTreeWidget(Tree):
         node = self.cursor_node._node
         if not node.parent:
             return
-        self.app.copied_bar.toggle(node)
+        self.app.copied_list.toggle(node)
         self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
 
     def action_jump_to_copy(self):
-        self.app.copied_bar.jump_to_next()
+        self.app.copied_list.jump_to_next()
 
     def action_cycle_copy(self):
-        self.app.copied_bar.cycle_target()
+        self.app.copied_list.cycle_target()
 
     def action_paste_node(self):
-        if not self.app.copied_bar.nodes or not self.cursor_node:
+        if not self.app.copied_list.nodes or not self.cursor_node:
             return
-        source = self.app.copied_bar.nodes[-1]
+        source = self.app.copied_list.nodes[-1]
         destination = self.cursor_node._node
         if destination == source:
             return
+        as_sibling = (
+            destination.parent is not None
+            and destination is not self.note_tree.context_node
+            and (not destination.children or destination.is_collapsed)
+        )
         self.note_tree.push_undo(source.parent)
         self.note_tree.push_undo(destination)
-        destination.paste_node_here(source)
+        if as_sibling:
+            self.note_tree.push_undo(destination.parent)
+        destination.paste_node_here(source, as_sibling=as_sibling)
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
-        self.app.copied_bar.nodes.pop()
-        self.app.copied_bar.render_content(self.app.copied_bar.nodes)
+        self.app.copied_list.nodes.pop()
+        if self.app.info_sidebar.display:
+            self.app.info_sidebar.update_data()
         self.render()
         self._fix_cursor_position(source)
 
@@ -510,12 +502,30 @@ class NoteTreeWidget(Tree):
         self.render()
 
     def action_zoom_in(self):
-        if not self.cursor_node or not self.cursor_node._node.children:
+        if not self.cursor_node:
             return
         if self.app.in_search_mode():
             return
 
-        self.note_tree.update_context(self.cursor_node._node)
+        node = self.cursor_node._node
+
+        if not node.children:
+            paths = extract_path_references(node.text)
+            if not paths:
+                return
+            path_query = paths[0].replace(" › ", ">").replace(" > ", ">")
+            matches = self.note_tree.find_by_path_beam(path_query)
+            if not matches:
+                self.app.notify(f"No path match for: {path_query}")
+                return
+            target = matches[0]
+            self.update_location(
+                context_node=target.parent if target.parent else target,
+                line_node=target,
+            )
+            return
+
+        self.note_tree.update_context(node)
 
         self.render()
         self.cursor_line = 0
@@ -807,7 +817,7 @@ class NoteTreeWidget(Tree):
             age_segment = Segment(age_char)
             if line.path[-1]._node:
                 _n = line.path[-1]._node
-                is_copied = _n in self.app.copied_bar.nodes
+                is_copied = _n in self.app.copied_list.nodes
                 is_bookmarked = self.note_tree.determine_if_bookmarked(_n)
                 if line.path[-1].label.plain.strip():
                     if is_copied:
@@ -862,4 +872,16 @@ class NoteTreeWidget(Tree):
             self.set_styled_node_label(node, is_cursor=True)
 
         self._update_progress()
+
+        height = self.size.height
+        if height > 0:
+            margin = self.app.config.scroll_margin
+            margin = min(margin, max(0, (height - 1) // 2))
+            top = int(self.scroll_offset.y)
+            bottom = top + height - 1
+            if line < top + margin:
+                self.scroll_to(y=max(0, line - margin), animate=False)
+            elif line > bottom - margin:
+                self.scroll_to(y=line - height + 1 + margin, animate=False)
+
         super().watch_cursor_line(previous_line, line)

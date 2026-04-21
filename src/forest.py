@@ -185,22 +185,19 @@ class ForestApp(App):
         doodle_w = self._DOODLE_WIDTH if doodle_visible else 0
 
         if width <= 0 or screen_width - width < self._MIN_TREE_WIDTH:
-            self.note_tree_widget.styles.margin = (0, 0)
+            sidebar_margin = 0
             sidebar_width = self._DEFAULT_SIDEBAR_WIDTH
         else:
-            remaining = screen_width - width - doodle_w
-            if remaining < self._MIN_TREE_WIDTH:
-                # Skip reserving doodle margin; pane still docks over the edge.
-                if side == "left":
-                    self.note_tree_widget.styles.margin = (0, 0, 0, width)
-                else:
-                    self.note_tree_widget.styles.margin = (0, width, 0, 0)
-            else:
-                if side == "left":
-                    self.note_tree_widget.styles.margin = (0, doodle_w, 0, width)
-                else:
-                    self.note_tree_widget.styles.margin = (0, width, 0, doodle_w)
+            sidebar_margin = width
             sidebar_width = width
+
+        remaining = screen_width - sidebar_margin - doodle_w
+        doodle_margin = doodle_w if remaining >= self._MIN_TREE_WIDTH else 0
+
+        if side == "left":
+            self.note_tree_widget.styles.margin = (0, doodle_margin, 0, sidebar_margin)
+        else:
+            self.note_tree_widget.styles.margin = (0, sidebar_margin, 0, doodle_margin)
 
         self.info_sidebar.apply_layout(side, sidebar_width)
         self.doodle_pane.apply_layout(opposite, doodle_w)

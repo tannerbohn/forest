@@ -1,4 +1,7 @@
 import copy
+import json
+import logging
+import os
 import random
 import re
 import textwrap
@@ -6,8 +9,13 @@ from datetime import datetime
 
 from node import Node, lca_distance
 from subtrees import SUBTREES
-from utils import (MONTH_ORDER, add_subtree, convert_to_nested_list,
-                   normalize_indentation, trigram_similarity)
+from utils import (
+    MONTH_ORDER,
+    add_subtree,
+    convert_to_nested_list,
+    normalize_indentation,
+    trigram_similarity,
+)
 
 # Matches inline metadata suffix like " @{2026-03-05,b7,x}" at end of line
 METADATA_RE = re.compile(r"\s+@\{([^}]+)\}$")
@@ -52,6 +60,7 @@ class NoteTree:
             bookmark_slot = None
             copied_index = None
             is_context = False
+            doodle_id = None
 
             meta_match = METADATA_RE.search(text)
             if meta_match:
@@ -75,6 +84,8 @@ class NoteTree:
                             bookmark_slot = int(part[1:])
                         elif part.startswith("c") and part[1:].isdigit():
                             copied_index = int(part[1:])
+                        elif part.startswith("d") and part[1:].isdigit():
+                            doodle_id = int(part[1:])
             if creation_time is None:
                 creation_time = _now
 
@@ -101,6 +112,8 @@ class NoteTree:
                 copied_by_index[copied_index] = cur_node
             if is_context:
                 context_node = cur_node
+            if doodle_id is not None:
+                cur_node.doodle_id = doodle_id
 
             prev_depth = depth
 
@@ -119,6 +132,11 @@ class NoteTree:
         self._undo_stack = []
         self._redo_stack = []
         self._undo_depth = undo_depth
+
+        self.doodles_sidecar_path = self.filename + ".doodles.json"
+        # App registers a callable returning (next_id: int, canvases: dict[int, dict])
+        # to have its doodle state persisted alongside save().
+        self._doodle_payload_provider = None
 
     def save(self):
         node_list = self.root.get_node_list(only_visible=False, hide_done=False)
@@ -145,6 +163,9 @@ class NoteTree:
                 if node == self.context_node:
                     meta_parts.append("x")
 
+                if node.doodle_id is not None:
+                    meta_parts.append(f"d{node.doodle_id}")
+
                 meta_str = ",".join(meta_parts)
                 line = (
                     "\t" * (node.depth - 1)
@@ -152,6 +173,78 @@ class NoteTree:
                 f.write(line + "\n")
 
         self.has_unsaved_operations = False
+        self._save_doodles_sidecar()
+
+    def load_doodles_sidecar(self) -> tuple[int, dict[int, dict]]:
+        path = self.doodles_sidecar_path
+        if not os.path.exists(path):
+            return (1, {})
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            raw_canvases = data.get("canvases", {})
+            canvases: dict[int, dict] = {}
+            for k, v in raw_canvases.items():
+                canvases[int(k)] = {
+                    "cells": [tuple(t) for t in v.get("cells", [])],
+                }
+            next_id = int(data.get("next_id", 1))
+            # Bump next_id past any d# actually present in the tree.
+            max_d = 0
+            for node in self.root.get_node_list(
+                only_visible=False, hide_done=False, hide_archive=False
+            ):
+                if node.doodle_id is not None and node.doodle_id > max_d:
+                    max_d = node.doodle_id
+            next_id = max(next_id, max_d + 1)
+            return (next_id, canvases)
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            logging.warning(f"Failed to load doodles sidecar {path}: {e}")
+            return (1, {})
+
+    def register_doodle_payload_provider(self, provider):
+        self._doodle_payload_provider = provider
+
+    def _save_doodles_sidecar(self):
+        if self._doodle_payload_provider is None:
+            return
+        try:
+            next_id, canvases = self._doodle_payload_provider()
+        except Exception as e:
+            logging.warning(f"doodle payload provider failed: {e}")
+            return
+
+        # Orphan sweep: only keep canvases whose id is owned by a live node.
+        live_ids = {
+            n.doodle_id
+            for n in self.root.get_node_list(
+                only_visible=False, hide_done=False, hide_archive=False
+            )
+            if n.doodle_id is not None
+        }
+        canvases = {cid: c for cid, c in canvases.items() if cid in live_ids}
+
+        if not canvases and not os.path.exists(self.doodles_sidecar_path):
+            return  # nothing to persist, nothing to clean
+
+        payload = {
+            "version": 1,
+            "next_id": next_id,
+            "canvases": {
+                str(cid): {
+                    "cells": [list(t) for t in c.get("cells", [])],
+                }
+                for cid, c in canvases.items()
+            },
+        }
+        path = self.doodles_sidecar_path
+        tmp = path + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump(payload, f)
+            os.replace(tmp, path)
+        except OSError as e:
+            logging.warning(f"Failed to write doodles sidecar {path}: {e}")
 
     def update_visible_node_list(self):
         # Context node's children are always visible (the tree renders them

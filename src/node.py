@@ -18,6 +18,8 @@ class Node:
         self.is_collapsed = is_collapsed
         self.creation_time = datetime.now()
 
+        self.doodle_id: int | None = None
+
         self.index = 0
 
         # TODO: find a nice way to make sure the number of highlights is synched between the palette file and this list

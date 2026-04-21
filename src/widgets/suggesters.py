@@ -9,7 +9,11 @@ class MultiPurposeSuggester(Suggester):
         super().__init__()
         self.mode = mode  # "command" or "edit"
         if self.mode == "command":
-            self.placeholder = "help | bookmark | run | timer <duration> | insert <name> | j+ <text> | collapse | ?/?* <query> | random/random* | sn/sn* [filter] | snr | archive set|unset|show|hide"
+            self.placeholder = (
+                "help | bookmark | run | timer <duration> | insert <name> | "
+                "j+ <text> | collapse | ?/?* <query> | random/random* | sn/sn* [filter] | snr | "
+                "archive set|unset|show|hide | doodle show|hide|clear"
+            )
         else:
             self.placeholder = ""
 
@@ -96,5 +100,14 @@ class MultiPurposeSuggester(Suggester):
             matching = [name for name in SUBTREES.keys() if name.startswith(partial)]
             if matching:
                 return "insert " + " | ".join(sorted(matching))
+
+        if "doodle ".startswith(value_lower) or value_lower.startswith("doodle"):
+            # Filter optoins based on what's been typed
+            partial = value[7:]  # Get text after "doodle "
+            matching = [
+                name for name in ["show", "hide", "clear"] if name.startswith(partial)
+            ]
+            if matching:
+                return "doodle " + " | ".join(sorted(matching))
 
         return None

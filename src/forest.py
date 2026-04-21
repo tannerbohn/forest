@@ -22,8 +22,8 @@ from search_state import SearchState
 from sticky_notes import StickyNotesScreen, _parse_flashcard
 from themes import THEMES
 from timer import Timer
-from utils import (apply_input_substitutions, extract_path_references,
-                   play_sound_effect)
+from utils import apply_input_substitutions, extract_path_references, play_sound_effect
+from widgets.doodle_pane import DoodlePane
 from widgets.info_sidebar import InfoSidebar
 from widgets.status_bar import StatusBar
 from widgets.suggesters import MultiPurposeSuggester
@@ -152,27 +152,58 @@ class ForestApp(App):
         if self.config.auto_save and self.config.auto_save_interval > 0:
             self.set_interval(self.config.auto_save_interval, self._auto_save)
 
+        self.doodle_pane.set_visible(self.config.doodle_pane_visible)
         self._apply_layout()
+
+        next_id, canvases = self.note_tree.load_doodles_sidecar()
+        self._doodle_next_id = next_id
+        self.doodle_pane.load_from_sidecar(canvases)
+        self.note_tree.register_doodle_payload_provider(
+            lambda: (self._doodle_next_id, self.doodle_pane.to_sidecar_payload())
+        )
+        self.doodle_pane.set_context(self.note_tree.context_node)
+
+    def _allocate_doodle_id(self) -> int:
+        i = self._doodle_next_id
+        self._doodle_next_id += 1
+        return i
 
     _MIN_TREE_WIDTH = 50
     _DEFAULT_SIDEBAR_WIDTH = 40
+
+    _DOODLE_WIDTH = 30
 
     def _apply_layout(self):
         side = self.config.margin_side
         width = self.config.margin_width
         screen_width = self.size.width
+        opposite = "left" if side == "right" else "right"
+        doodle_visible = (
+            getattr(self, "doodle_pane", None) is not None
+            and self.doodle_pane.pane_visible
+        )
+        doodle_w = self._DOODLE_WIDTH if doodle_visible else 0
 
         if width <= 0 or screen_width - width < self._MIN_TREE_WIDTH:
             self.note_tree_widget.styles.margin = (0, 0)
             sidebar_width = self._DEFAULT_SIDEBAR_WIDTH
         else:
-            if side == "left":
-                self.note_tree_widget.styles.margin = (0, 0, 0, width)
+            remaining = screen_width - width - doodle_w
+            if remaining < self._MIN_TREE_WIDTH:
+                # Skip reserving doodle margin; pane still docks over the edge.
+                if side == "left":
+                    self.note_tree_widget.styles.margin = (0, 0, 0, width)
+                else:
+                    self.note_tree_widget.styles.margin = (0, width, 0, 0)
             else:
-                self.note_tree_widget.styles.margin = (0, width, 0, 0)
+                if side == "left":
+                    self.note_tree_widget.styles.margin = (0, doodle_w, 0, width)
+                else:
+                    self.note_tree_widget.styles.margin = (0, width, 0, doodle_w)
             sidebar_width = width
 
         self.info_sidebar.apply_layout(side, sidebar_width)
+        self.doodle_pane.apply_layout(opposite, doodle_w)
 
     def on_resize(self, event):
         self.call_after_refresh(self._apply_layout)
@@ -198,9 +229,11 @@ class ForestApp(App):
         self.note_tree_widget = NoteTreeWidget(note_tree=self.note_tree, id="note-tree")
         self.note_tree_widget.focus()
         self.info_sidebar = InfoSidebar(id="info-sidebar")
+        self.doodle_pane = DoodlePane(id="doodle-pane")
 
         yield self.note_tree_widget
         yield self.info_sidebar
+        yield self.doodle_pane
 
     def get_theme_variable_defaults(self):
         # Return the variables for the current theme
@@ -348,6 +381,12 @@ class ForestApp(App):
                 self.note_tree_widget.toggle_bookmark()
             elif cmd_str == "help":
                 self.info_sidebar.show_help()
+            elif cmd_str == "doodle clear":
+                self.doodle_pane.clear_current()
+            elif cmd_str == "doodle show":
+                self.doodle_pane.set_visible(True)
+            elif cmd_str == "doodle hide":
+                self.doodle_pane.set_visible(False)
             elif cmd_str == "run" or cmd_str.startswith("run "):
                 parts = cmd_str.split(maxsplit=1)
                 index = 0

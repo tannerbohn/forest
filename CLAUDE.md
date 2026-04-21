@@ -24,6 +24,7 @@ Forest uses `config.json` in the project root for settings:
 - `margin_side` (string, "left" or "right"): Side of the screen where the tree margin and InfoSidebar are placed (default: "right")
 - `margin_width` (integer): Cells reserved on `margin_side` for the tree margin and sidebar width. Dropped if it would shrink the tree below a small internal minimum; the sidebar still overlays at this width (default: 30)
 - `scroll_margin` (integer): Minimum lines kept between the cursor and the top/bottom of the tree viewport before scrolling. `0` = scroll only at the edge; large values approximate centering. Clamped to at most half the viewport (default: 5)
+- `doodle_pane_visible` (boolean): Whether the doodle pane is shown at startup (default: true)
 
 If `config.json` is missing, Forest uses defaults (sounds enabled, "forest" theme, INFO logging). Copy `config.json.example` to `config.json` to customize settings.
 

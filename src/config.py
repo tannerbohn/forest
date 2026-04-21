@@ -14,6 +14,7 @@ DEFAULT_CONFIG = {
     "margin_side": "right",
     "margin_width": 30,
     "scroll_margin": 5,
+    "doodle_pane_visible": True,
 }
 
 
@@ -100,3 +101,7 @@ class Config:
     @property
     def scroll_margin(self):
         return max(0, int(self.get("scroll_margin", 5)))
+
+    @property
+    def doodle_pane_visible(self):
+        return bool(self.get("doodle_pane_visible", True))

@@ -7,5 +7,6 @@
     "auto_save_interval": 5,
     "margin_side": "right",
     "margin_width": 30,
-    "scroll_margin": 5
+    "scroll_margin": 5,
+    "doodle_pane_visible": true
 }

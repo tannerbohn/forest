@@ -299,6 +299,9 @@ class NoteTreeWidget(Tree):
             self.root.remove_children()  # Clear the tree before reloading
             self.build_tree(self.root, self.note_tree.context_node, depth=0)
             self.app.status_bar.context_node = self.note_tree.context_node
+            doodle = getattr(self.app, "doodle_pane", None)
+            if doodle is not None:
+                doodle.set_context(self.note_tree.context_node)
         else:
             self.build_tree(
                 target_widget.parent,

@@ -308,7 +308,7 @@ class InfoSidebar(DataTable):
                     marker = "v" if i == 0 else "•"
                     table_rows.append(
                         [
-                            Text.from_markup(f"[{hl1}]{marker}[/{hl1}]"),
+                            Text.from_markup(f"[dim][{hl1}]{marker}[/{hl1}][/dim]"),
                             Text.from_markup(text),
                         ]
                     )

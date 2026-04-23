@@ -22,6 +22,20 @@ from utils import add_subtree, extract_path_references
 logging = None
 
 
+def _truncate_link_segment(text: str, max_chars: int = 30, max_words: int = 5) -> str:
+    text = text.strip()
+    if not text:
+        return text
+    words = text.split()
+    if len(words) > max_words:
+        words = words[:max_words]
+    truncated = " ".join(words)
+    if len(truncated) > max_chars:
+        cut = truncated[:max_chars].rsplit(" ", 1)[0] or truncated[:max_chars]
+        truncated = cut
+    return truncated
+
+
 class NoteTreeWidget(Tree):
 
     BINDINGS = [
@@ -44,6 +58,7 @@ class NoteTreeWidget(Tree):
         Binding("C", "cycle_copy()", "Cycle copy target", show=False),
         Binding("v", "paste_node()", "Paste", show=False),
         Binding("V", "jump_to_copy()", "Move to next copied note", show=False),
+        Binding("l", "paste_link()", "Paste link to copied note", show=False),
     ]
 
     def __init__(self, note_tree: NoteTree, id: str):
@@ -499,6 +514,38 @@ class NoteTreeWidget(Tree):
             self.app.info_sidebar.update_data()
         self.render()
         self._fix_cursor_position(source)
+
+    def action_paste_link(self):
+        if not self.app.copied_list.nodes or not self.cursor_node:
+            return
+        source = self.app.copied_list.nodes[-1]
+        destination = self.cursor_node._node
+        if destination == source:
+            return
+        path_parts = source.get_path(include_self=True)[1:]
+        if not path_parts:
+            return
+        link_text = f"[[{' > '.join(_truncate_link_segment(p) for p in path_parts)}]]"
+        as_sibling = (
+            destination.parent is not None
+            and destination is not self.note_tree.context_node
+            and (not destination.children or destination.is_collapsed)
+        )
+        if as_sibling:
+            parent = destination.parent
+            self.note_tree.push_undo(parent)
+            sibling_index = parent.children.index(destination)
+            new_node = parent.add_child(link_text, index=sibling_index + 1)
+        else:
+            self.note_tree.push_undo(destination)
+            new_node = destination.add_child(link_text, top=True)
+        self.note_tree.index_nodes()
+        self.note_tree.has_unsaved_operations = True
+        self.app.copied_list.nodes.pop()
+        if self.app.info_sidebar.display:
+            self.app.info_sidebar.update_data()
+        self.render()
+        self._fix_cursor_position(new_node)
 
     def on_resize(self, event) -> None:
         new_size = event.size

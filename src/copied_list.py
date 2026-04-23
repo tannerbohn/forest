@@ -8,8 +8,11 @@ class CopiedList:
 
     def _refresh_sidebar(self) -> None:
         sidebar = getattr(self.app, "info_sidebar", None)
-        if sidebar is not None and sidebar.display:
-            sidebar.update_data()
+        if sidebar is None or not sidebar.display:
+            return
+        if sidebar._search_results:
+            return
+        sidebar.update_data()
 
     def toggle(self, node) -> None:
         if node in self.nodes:

@@ -22,7 +22,8 @@ from search_state import SearchState
 from sticky_notes import StickyNotesScreen, _parse_flashcard
 from themes import THEMES
 from timer import Timer
-from utils import apply_input_substitutions, extract_path_references, play_sound_effect
+from utils import (apply_input_substitutions, extract_path_references,
+                   play_sound_effect)
 from widgets.doodle_pane import DoodlePane
 from widgets.info_sidebar import InfoSidebar
 from widgets.status_bar import StatusBar
@@ -707,6 +708,14 @@ class ForestApp(App):
                 event.stop()
                 self._search.cycle(1)
                 self.update_search_view()
+            elif event.key == "c":
+                event.prevent_default()
+                event.stop()
+                node = self._search.current_node
+                if node is not None and node.parent is not None:
+                    self.copied_list.toggle(node)
+                    self.info_sidebar.update_search_highlight(self._search.index)
+                    self.note_tree_widget.render()
             elif event.key in ["enter", "escape"]:
                 self.status_bar.search_mode = False
                 if event.key == "escape":

@@ -9,13 +9,8 @@ from datetime import datetime
 
 from node import Node, lca_distance
 from subtrees import SUBTREES
-from utils import (
-    MONTH_ORDER,
-    add_subtree,
-    convert_to_nested_list,
-    normalize_indentation,
-    trigram_similarity,
-)
+from utils import (MONTH_ORDER, add_subtree, convert_to_nested_list,
+                   normalize_indentation, trigram_similarity)
 
 # Matches inline metadata suffix like " @{2026-03-05,b7,x}" at end of line
 METADATA_RE = re.compile(r"\s+@\{([^}]+)\}$")

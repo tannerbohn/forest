@@ -3,7 +3,7 @@ from rich.text import Text
 from textual.color import Color
 from textual.widgets import Static
 
-DOT_GLYPH = "￭"  # "●"
+DOT_GLYPH = "╱"  # "￭"  # "●"
 
 
 class DoodlePane(Static):
@@ -14,6 +14,7 @@ class DoodlePane(Static):
         background-tint: $panel 10%;
         layer: overlay;
         offset: 0 1;
+        hatch: right $panel;
     }
     """
 
@@ -394,7 +395,7 @@ class DoodlePane(Static):
             self.app.note_tree.has_unsaved_operations = True
             self.app.status_bar.needs_saving = True
         # Always flush one render so the displayed canvas matches final state.
-        self._dirty = True
+        # self._dirty = True
 
         try:
             self.release_mouse()

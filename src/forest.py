@@ -22,8 +22,7 @@ from search_state import SearchState
 from sticky_notes import StickyNotesScreen, _parse_flashcard
 from themes import THEMES
 from timer import Timer
-from utils import (apply_input_substitutions, extract_path_references,
-                   play_sound_effect)
+from utils import apply_input_substitutions, extract_path_references, play_sound_effect
 from widgets.doodle_pane import DoodlePane
 from widgets.info_sidebar import InfoSidebar
 from widgets.status_bar import StatusBar
@@ -179,7 +178,6 @@ class ForestApp(App):
         if self.config.auto_save and self.config.auto_save_interval > 0:
             self.set_interval(self.config.auto_save_interval, self._auto_save)
 
-        self.doodle_pane.set_visible(self.config.doodle_pane_visible)
         self._apply_layout()
 
         next_id, canvases = self.note_tree.load_doodles_sidecar()
@@ -254,6 +252,21 @@ class ForestApp(App):
         self.note_tree_widget.focus()
         self.info_sidebar = InfoSidebar(id="info-sidebar")
         self.doodle_pane = DoodlePane(id="doodle-pane")
+
+        # Pre-apply margin/visibility so the tree's initial render wraps at
+        # the final width, avoiding a visible reflow when on_mount later
+        # calls _apply_layout().
+        doodle_visible = self.config.doodle_pane_visible
+        self.doodle_pane.pane_visible = doodle_visible
+        self.doodle_pane.styles.display = "block" if doodle_visible else "none"
+
+        side = self.config.margin_side
+        sidebar_margin = self.config.margin_width if self.config.margin_width > 0 else 0
+        doodle_margin = self._DOODLE_WIDTH if doodle_visible else 0
+        if side == "left":
+            self.note_tree_widget.styles.margin = (0, doodle_margin, 0, sidebar_margin)
+        else:
+            self.note_tree_widget.styles.margin = (0, sidebar_margin, 0, doodle_margin)
 
         yield self.note_tree_widget
         yield self.info_sidebar

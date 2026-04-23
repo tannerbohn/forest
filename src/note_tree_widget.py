@@ -38,6 +38,12 @@ def _truncate_link_segment(text: str, max_chars: int = 30, max_words: int = 5) -
 
 class NoteTreeWidget(Tree):
 
+    DEFAULT_CSS = """
+    NoteTreeWidget {
+        scrollbar-gutter: stable;
+    }
+    """
+
     BINDINGS = [
         Binding("s", "save()", "Save", show=True),
         # Binding("enter", "add_note()", "Add note", show=True),
@@ -94,9 +100,11 @@ class NoteTreeWidget(Tree):
         self.show_root = False
         self.auto_expand = False
 
-        self.render()
-        if self._tree_lines:
-            self.move_cursor_to_line(0)
+        # Defer the first render to on_resize: self.size.width isn't known
+        # yet here, which would cause build_tree to wrap against the full app
+        # width (ignoring our margin) and trigger a visible re-wrap once the
+        # widget is sized.
+        self._initial_render_done = False
 
     def _build(self) -> None:
         super()._build()
@@ -381,6 +389,7 @@ class NoteTreeWidget(Tree):
                 and candidate._first_widget_of_multiline == candidate
             ):
                 self.move_cursor(candidate)
+                return
 
     def action_indent(self):
         if not self.cursor_node:
@@ -553,6 +562,10 @@ class NoteTreeWidget(Tree):
     def on_resize(self, event) -> None:
         new_size = event.size
         self.render()
+        if not self._initial_render_done:
+            self._initial_render_done = True
+            if self._tree_lines:
+                self.move_cursor_to_line(0)
 
     def action_zoom_in(self):
         if not self.cursor_node:
@@ -619,6 +632,7 @@ class NoteTreeWidget(Tree):
                 self.render()
 
                 self._fix_cursor_position(_node)
+                self._scroll_cursor_into_margin()
 
     def on_mouse_scroll_down(self, event):
         event.prevent_default()
@@ -914,6 +928,20 @@ class NoteTreeWidget(Tree):
             except ValueError:
                 logging.error(f"Node not in list: {node._node.text}")
 
+    def _scroll_cursor_into_margin(self) -> None:
+        line = self.cursor_line
+        height = self.size.height
+        if height <= 0 or line < 0:
+            return
+        margin = self.app.config.scroll_margin
+        margin = min(margin, max(0, (height - 1) // 2))
+        top = int(self.scroll_offset.y)
+        bottom = top + height - 1
+        if line < top + margin:
+            self.scroll_to(y=max(0, line - margin), animate=False)
+        elif line > bottom - margin:
+            self.scroll_to(y=line - height + 1 + margin, animate=False)
+
     def watch_cursor_line(self, previous_line: int, line: int) -> None:
         node = self._get_node(line)
 
@@ -930,15 +958,6 @@ class NoteTreeWidget(Tree):
 
         self._update_progress()
 
-        height = self.size.height
-        if height > 0:
-            margin = self.app.config.scroll_margin
-            margin = min(margin, max(0, (height - 1) // 2))
-            top = int(self.scroll_offset.y)
-            bottom = top + height - 1
-            if line < top + margin:
-                self.scroll_to(y=max(0, line - margin), animate=False)
-            elif line > bottom - margin:
-                self.scroll_to(y=line - height + 1 + margin, animate=False)
+        self._scroll_cursor_into_margin()
 
         super().watch_cursor_line(previous_line, line)

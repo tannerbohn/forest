@@ -32,6 +32,32 @@ from widgets.suggesters import MultiPurposeSuggester
 # Load configuration from config.json
 config = Config()
 
+# Shift+<digit> arrives as the shifted symbol character. Textual's event.key
+# uses named aliases for many of these; event.character is the raw symbol.
+# Accept both forms so layouts/terminals that deliver either still work.
+SHIFT_DIGIT_TO_SLOT = {
+    "!": 1,
+    "@": 2,
+    "#": 3,
+    "$": 4,
+    "%": 5,
+    "^": 6,
+    "&": 7,
+    "*": 8,
+    "(": 9,
+    ")": 0,
+    "exclamation_mark": 1,
+    "at": 2,
+    "number_sign": 3,
+    "dollar_sign": 4,
+    "percent_sign": 5,
+    "circumflex_accent": 6,
+    "ampersand": 7,
+    "asterisk": 8,
+    "left_parenthesis": 9,
+    "right_parenthesis": 0,
+}
+
 
 def setup_logging(tree_filepath):
     """Configure per-instance logging based on the tree file being opened."""
@@ -375,8 +401,6 @@ class ForestApp(App):
                 self.info_sidebar.show_search_results(matching_nodes, display_query)
                 self.update_search_view()
 
-            elif cmd_str in ["b", "bookmark"]:
-                self.note_tree_widget.toggle_bookmark()
             elif cmd_str == "help":
                 self.info_sidebar.show_help()
             elif cmd_str == "doodle clear":
@@ -732,6 +756,15 @@ class ForestApp(App):
             self.note_tree_widget.visit_bookmark(int(event.key))
             if bookmark_node:
                 self.info_sidebar.update_data()
+        else:
+            slot = SHIFT_DIGIT_TO_SLOT.get(event.key)
+            if slot is None:
+                slot = SHIFT_DIGIT_TO_SLOT.get(getattr(event, "character", None))
+            if slot is not None:
+                logging.info(
+                    f"shift-digit: key={event.key!r} char={getattr(event, 'character', None)!r} -> slot {slot}"
+                )
+                self.note_tree_widget.assign_bookmark(slot)
 
 
 if __name__ == "__main__":

@@ -422,6 +422,7 @@ class NoteTreeWidget(Tree):
         node_obj = self.cursor_node._node
         if node_obj in self.app.copied_list.nodes:
             self.app.copied_list.nodes.remove(node_obj)
+            self.note_tree.remove_bookmark_for(node_obj)
             if self.app.info_sidebar.display:
                 self.app.info_sidebar.update_data()
 
@@ -510,6 +511,7 @@ class NoteTreeWidget(Tree):
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
         self.app.copied_list.nodes.pop()
+        self.note_tree.remove_bookmark_for(source)
         if self.app.info_sidebar.display:
             self.app.info_sidebar.update_data()
         self.render()
@@ -541,7 +543,8 @@ class NoteTreeWidget(Tree):
             new_node = destination.add_child(link_text, top=True)
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
-        self.app.copied_list.nodes.pop()
+        popped = self.app.copied_list.nodes.pop()
+        self.note_tree.remove_bookmark_for(popped)
         if self.app.info_sidebar.display:
             self.app.info_sidebar.update_data()
         self.render()
@@ -728,11 +731,15 @@ class NoteTreeWidget(Tree):
             self.render()
             self._fix_cursor_position(target)
 
-    def toggle_bookmark(self):
+    def assign_bookmark(self, slot: int):
         if not self.cursor_node:
             return
         _node = self.cursor_node._node
-        self.note_tree.toggle_bookmark(_node)
+        if not _node.parent:
+            return
+        self.note_tree.assign_bookmark(_node, slot)
+        if self.app.info_sidebar.display:
+            self.app.info_sidebar.update_data()
         self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
 
     def add_subtree(self, subtree_name: str):
@@ -870,10 +877,10 @@ class NoteTreeWidget(Tree):
                 is_copied = _n in self.app.copied_list.nodes
                 is_bookmarked = self.note_tree.determine_if_bookmarked(_n)
                 if line.path[-1].label.plain.strip():
-                    if is_copied:
-                        age_char = "▎🔹 "
-                    elif is_bookmarked:
+                    if is_bookmarked:
                         age_char = "▎💠 "
+                    elif is_copied:
+                        age_char = "▎🔹 "
                     else:
                         age_char = "▎   "
                 else:

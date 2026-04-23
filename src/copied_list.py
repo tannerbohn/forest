@@ -17,6 +17,7 @@ class CopiedList:
     def toggle(self, node) -> None:
         if node in self.nodes:
             self.nodes.remove(node)
+            self.app.note_tree.remove_bookmark_for(node)
         else:
             self.nodes.append(node)
         self.app.note_tree.has_unsaved_operations = True
@@ -31,7 +32,13 @@ class CopiedList:
         return bool(self.nodes)
 
     def rotate(self) -> None:
-        self.nodes[:] = [self.nodes[-1]] + self.nodes[:-1]
+        # Only rotate the non-bookmarked tail; bookmarked nodes stay pinned
+        # at the start of the list (= bottom of sidebar) in their order.
+        k = self.app.note_tree.bookmark_split_index()
+        tail = self.nodes[k:]
+        if len(tail) <= 1:
+            return
+        self.nodes[k:] = [tail[-1]] + tail[:-1]
         self.app.note_tree.has_unsaved_operations = True
         self.app.status_bar.needs_saving = True
 

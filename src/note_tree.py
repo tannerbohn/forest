@@ -30,9 +30,9 @@ class NoteTree:
         self.hide_archive = True
         self.journal = None
         self.bookmarks: dict[int, Node] = {}
-        self.bookmark_last_use_times: dict[int, datetime] = {}
         self.copied_nodes: list[Node] = []
         copied_by_index: dict[int, Node] = {}
+        bookmark_only_nodes: list[Node] = []
         context_node = None
 
         cur_node = self.root
@@ -102,7 +102,8 @@ class NoteTree:
             cur_node.creation_time = creation_time
             if bookmark_slot is not None:
                 self.bookmarks[bookmark_slot] = cur_node
-                self.bookmark_last_use_times[bookmark_slot] = datetime.now()
+                if copied_index is None:
+                    bookmark_only_nodes.append(cur_node)
             if copied_index is not None:
                 copied_by_index[copied_index] = cur_node
             if is_context:
@@ -113,6 +114,17 @@ class NoteTree:
             prev_depth = depth
 
         self.copied_nodes = [node for _, node in sorted(copied_by_index.items())]
+        # Bookmarks without a matching c# entry (legacy format): append so the
+        # invariant "every bookmarked node is in copied_nodes" holds.
+        for node in bookmark_only_nodes:
+            if node not in self.copied_nodes:
+                self.copied_nodes.append(node)
+        # Pin bookmarked entries to the start (= bottom of sidebar), sorted by slot.
+        slot_of = {id(n): s for s, n in self.bookmarks.items()}
+        bookmarked = [n for n in self.copied_nodes if id(n) in slot_of]
+        bookmarked.sort(key=lambda n: slot_of[id(n)], reverse=True)
+        others = [n for n in self.copied_nodes if id(n) not in slot_of]
+        self.copied_nodes = bookmarked + others
 
         node_list = self.index_nodes()
 
@@ -509,7 +521,6 @@ class NoteTree:
         if index in self.bookmarks:
 
             focus_node = self.bookmarks[index]
-            self.bookmark_last_use_times[index] = datetime.now()
 
             if not focus_node.children:
                 self.update_context(focus_node.parent)
@@ -518,29 +529,55 @@ class NoteTree:
 
             return focus_node
 
-    def toggle_bookmark(self, node: Node):
-        if node in self.bookmarks.values():
-            index = [k for k, n in self.bookmarks.items() if n == node][0]
-            del self.bookmarks[index]
-            del self.bookmark_last_use_times[index]
-            self.has_unsaved_operations = True
-        else:
-            # find the first index that isn't user
-            new_index = None
-            for index in range(0, 10):
-                if not index in self.bookmarks:
-                    new_index = index
-                    break
-            if new_index is None:
-                # replace the bookmark that hasn't been used in the longest time
-                new_index = sorted(
-                    self.bookmark_last_use_times,
-                    key=lambda index: self.bookmark_last_use_times[index],
-                )[0]
+    def get_bookmark_slot(self, node: Node) -> int | None:
+        for slot, n in self.bookmarks.items():
+            if n is node:
+                return slot
+        return None
 
-            self.bookmarks[new_index] = node
-            self.bookmark_last_use_times[new_index] = datetime.now()
+    def _sort_copied_by_bookmarks(self) -> None:
+        # Bookmarked nodes are pinned to the start of copied_nodes (= bottom of
+        # sidebar, which renders reversed). Relative order within each group is
+        # preserved.
+        bookmarked = [
+            n for n in self.copied_nodes if self.get_bookmark_slot(n) is not None
+        ]
+        bookmarked.sort(key=lambda n: self.get_bookmark_slot(n), reverse=True)
+        others = [n for n in self.copied_nodes if self.get_bookmark_slot(n) is None]
+        self.copied_nodes[:] = bookmarked + others
+
+    def bookmark_split_index(self) -> int:
+        """Index in copied_nodes where the non-bookmarked tail begins."""
+        for i, n in enumerate(self.copied_nodes):
+            if self.get_bookmark_slot(n) is None:
+                return i
+        return len(self.copied_nodes)
+
+    def remove_bookmark_for(self, node: Node) -> None:
+        slot = self.get_bookmark_slot(node)
+        if slot is not None:
+            del self.bookmarks[slot]
+            self._sort_copied_by_bookmarks()
             self.has_unsaved_operations = True
+
+    def assign_bookmark(self, node: Node, slot: int) -> None:
+        current = self.bookmarks.get(slot)
+        if current is node:
+            # Self-toggle: release the slot, keep node in copied list.
+            del self.bookmarks[slot]
+            self._sort_copied_by_bookmarks()
+            self.has_unsaved_operations = True
+            return
+        # Move node off any prior slot it held.
+        prior = self.get_bookmark_slot(node)
+        if prior is not None:
+            del self.bookmarks[prior]
+        # Steal the requested slot; displaced holder stays in copied list.
+        self.bookmarks[slot] = node
+        if node not in self.copied_nodes:
+            self.copied_nodes.append(node)
+        self._sort_copied_by_bookmarks()
+        self.has_unsaved_operations = True
 
     def determine_if_bookmarked(self, node: None):
         return node in self.bookmarks.values()

@@ -10,7 +10,7 @@ class MultiPurposeSuggester(Suggester):
         self.mode = mode  # "command" or "edit"
         if self.mode == "command":
             self.placeholder = (
-                "help | bookmark | run | timer <duration> | insert <name> | "
+                "help | run | timer <duration> | insert <name> | "
                 "j+ <text> | collapse | ?/?* <query> | random/random* | sn/sn* [filter] | snr | "
                 "archive set|unset|show|hide | doodle show|hide|clear"
             )
@@ -46,9 +46,6 @@ class MultiPurposeSuggester(Suggester):
 
         if "help".startswith(value_lower):
             return "help"
-
-        if "bookmark".startswith(value_lower):
-            return "bookmark"
 
         if "run".startswith(value_lower):
             return "run"

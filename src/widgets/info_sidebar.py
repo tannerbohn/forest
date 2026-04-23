@@ -115,7 +115,8 @@ class InfoSidebar(DataTable):
                 ["", Text.from_markup("[b]Navigation[/b]")],
                 ["←/→", "Zoom out/in"],
                 ["space", "Toggle collapse"],
-                ["0-9", "Jump to bookmark"],
+                ["0-9", "Jump to bookmarked copy"],
+                ["S-0..9", "Assign bookmark # to copied note"],
                 ["", ""],
                 ["", Text.from_markup("[b]Editing[/b]")],
                 ["bksp", "Edit note"],
@@ -135,7 +136,6 @@ class InfoSidebar(DataTable):
                 ["", ""],
                 ["", Text.from_markup("[b]Commands[/b]")],
                 [":", "Command mode"],
-                [":b or :bookmark", "Toggle bookmark"],
                 [":j+ <text>", "Add journal entry"],
                 [":collapse", "Collapse all nodes in context"],
                 [":? <query regex>", "Search in context"],
@@ -295,38 +295,30 @@ class InfoSidebar(DataTable):
 
             table_rows.extend(
                 [
-                    ["", Text.from_markup("[b]Bookmarks[/b]")],
+                    ["", Text.from_markup("[b]Copied Stack[/b]")],
                     ["", ""],
-                    ["Key", "Note"],
                 ]
             )
 
-            nb_bookmarks = 10
-            for index in range(nb_bookmarks):
-                node = self.app.note_tree.bookmarks.get(index)
-                text = node.text if node else ""
-                table_rows.append([index, text])
-
             copied_nodes = self.app.note_tree.copied_nodes
             if copied_nodes:
-                table_rows.extend(
-                    [
-                        ["", ""],
-                        ["", Text.from_markup("[b]Copied[/b]")],
-                        ["", ""],
-                    ]
-                )
                 max_text_width = max(width - 6, 10)
                 hl1 = self.app.theme_variables.get("HL1", "white")
-                n = len(copied_nodes)
                 for i, node in enumerate(copied_nodes[::-1]):
                     text = node.text
                     if len(text) > max_text_width:
                         text = text[: max_text_width - 1] + "…"
-                    marker = "vl" if i == 0 else "•"
+                    slot = self.app.note_tree.get_bookmark_slot(node)
+                    if slot is not None:
+                        base = " vl" if i == 0 else ""
+                        marker_inner = f"[b]{slot}[/b]{base}"
+                    else:
+                        marker_inner = "vl" if i == 0 else "•"
                     table_rows.append(
                         [
-                            Text.from_markup(f"[dim][{hl1}]{marker}[/{hl1}][/dim]"),
+                            Text.from_markup(
+                                f"[dim][{hl1}]{marker_inner}[/{hl1}][/dim]"
+                            ),
                             Text.from_markup(text),
                         ]
                     )
@@ -334,13 +326,17 @@ class InfoSidebar(DataTable):
                     [
                         [
                             "",
+                            Text.from_markup("[dim]\\[c]opy \\[v]paste \\[l]ink[/dim]"),
+                        ],
+                        [
+                            "",
                             Text.from_markup(
-                                "[dim]\\[c]opy  \\[v]paste \\[l]ink[/dim]"
+                                "[dim]\\[C]ycle \\[V]isit \\[#]jump[/dim]"
                             ),
                         ],
                         [
                             "",
-                            Text.from_markup("[dim]\\[C]ycle \\[V]isit[/dim]"),
+                            Text.from_markup("[dim]\\[S-#]bookmark[/dim]"),
                         ],
                     ]
                 )

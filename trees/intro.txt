@@ -10,9 +10,9 @@
 	- 0-9 jumps to a bookmarked note @{2026-02-16}
 - Creating notes @{2026-02-16}
 	- Press Enter to add a new note below the cursor @{2026-02-16}
-	- While typing, you can press Tab or Shift+Tab at the start of the line to indent or de-indent it @{2026-02-16}
+	- While typing, you can press Tab or Shift+Tab to indent or de-indent it @{2026-02-16}
 - Editing notes @{2024-01-22}
-	- Press e or Backspace to edit a note. Press Enter when done, or Esc to cancel @{2026-02-16}
+	- Press Backspace to edit a note. Press Enter when done, or Esc to cancel @{2026-02-16}
 	- x toggles a note as complete (dims the note and its children) #DONE @{2026-02-16}
 	- X toggles hiding all #DONE notes from view @{2026-02-16}
 	- Tab and Shift+Tab indent and de-indent a note @{2026-02-16}
@@ -23,7 +23,7 @@
 		- secondary #HL2 @{2026-02-16}
 		- tertiary #HL3 @{2026-02-16}
 	- z to undo, Z to redo #HL3 @{2026-02-16}
-	- Typing {NOW } in a note will be replaced with the current timestamp @{2026-02-16}
+	- Typing { NOW } (without the spaces) in a note will be replaced with the current timestamp @{2026-02-16}
 - Saving @{2026-02-16}
 	- Press s to save. If you have unsaved changes, "Modified" will appear in the top bar @{2026-02-16}
 	- Auto-save is also enabled by default @{2026-02-16}
@@ -52,12 +52,13 @@
 		- archived notes are excluded from search, random jump, and sticky notes as long as :archive hide is in effect @{2026-04-17}
 	- :help shows the help panel @{2026-02-16}
 - Side panel @{2026-02-16}
-	- Press ` to cycle through the side panel views (bookmarks, similar notes) or hide it @{2026-02-16}
+	- Press ` to cycle through the side panel views (bookmarks, perpetual journal) or hide it @{2026-02-16}
 - Copying and Pasting @{2026-04-09}
 	- Press "c" to add the cursor note to the top of the copied list. Press "c" again to remove it. @{2026-04-09}
-	- Press "v" to paste the top of the copied list as a child of the cursor note @{2026-04-09}
+	- Press "v" to paste the top of the copied list below the cursor note @{2026-04-09}
 	- Press "C" to cycle the paste target (rotates the copied list without moving the cursor) @{2026-04-09}
 	- Press "V" to move to the next copied note (also rotates the list, so the visited note becomes the new paste target) @{2026-04-09}
+	- Press "l" to insert a [[path]] link to the top copied note (removes it from the list); follow with :run @{2026-04-22}
 - What's up with the coloured strip on the left? @{2026-02-16}
 	- This strip reflects the age of a note. New notes are bright, and as they get older they slowly fade @{2026-02-16}
 - Flashcards @{2026-03-05}
@@ -66,3 +67,8 @@
 	- This is also side A :: @{2026-03-05}
 		- And the first child is used for side B @{2026-03-05}
 	- Use ":sn ::" to generate a sticky note view of flash cards @{2026-03-05}
+- Doodling @{2026-04-22}
+	- If configured (add `"doodle_pane_visible": true` to config.json), a panel will appear on the side that you can draw in. @{2026-04-22}
+	- Click inside the panel to focus, and then start drawing! Use Shift-M to switch modes. Use Esc or click out to switch focus back. @{2026-04-22}
+	- Doodles stack like backlit sheets -- doodles for the current context are more visible, with doodles from ancestor nodes being visible, but less so @{2026-04-22}
+	- Use ":doodle show|hide|clear" to show the panel, hide it, or clear the doodle for the current context @{2026-04-22}

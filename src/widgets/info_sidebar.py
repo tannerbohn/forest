@@ -32,6 +32,18 @@ class InfoSidebar(DataTable):
         """Initialize the DataTable with columns to prevent first-render issues."""
         self.add_columns("", "")
         self.show_header = True
+        self.set_interval(5, self._refresh_clock_row)
+
+    def _refresh_clock_row(self):
+        """Update the clock row in place so it stays current while the sidebar is open."""
+        if not self.display or self.row_count == 0:
+            return
+        title, body = compose_clock_notify_contents()
+        clock_text = Text.from_markup(f"[italic]{title}[dim] - {body}[/dim][/italic]")
+        try:
+            self.update_cell_at((0, 1), clock_text)
+        except Exception:
+            pass
 
     def apply_layout(self, side: str, width: int):
         self.styles.dock = side
@@ -118,6 +130,7 @@ class InfoSidebar(DataTable):
                 ["C", "Cycle paste target (rotates list)"],
                 ["v", "Paste top of copied list after cursor"],
                 ["V", "Move to next copied note (rotates list)"],
+                ["l", "Paste [[path]] link to top of copied list"],
                 ["z/Z", "Undo/redo"],
                 ["", ""],
                 ["", Text.from_markup("[b]Commands[/b]")],
@@ -198,19 +211,24 @@ class InfoSidebar(DataTable):
         highlight_row = None
         max_text_width = max(width - 6, 10)
 
+        copied_nodes = self.app.note_tree.copied_nodes
+        hl1 = self.app.theme_variables.get("HL1", "white")
+
         for idx, match_node in enumerate(matches):
             is_current = idx == self._search_highlight_index
+            is_copied = match_node in copied_nodes
 
             # Row 1: marker + node text
             node_text = match_node.text
             if len(node_text) > max_text_width:
                 node_text = node_text[: max_text_width - 1] + "…"
 
-            marker = (
-                Text.from_markup("❯")
-                if is_current
-                else Text.from_markup("[dim]›[/dim]")
-            )
+            if is_current:
+                marker = Text.from_markup("❯")
+            elif is_copied:
+                marker = Text.from_markup(f"[{hl1}]•[/{hl1}]")
+            else:
+                marker = Text.from_markup("[dim]›[/dim]")
             if is_current:
                 styled_text = Text.from_markup(f"[reverse]{node_text}[/reverse]")
                 highlight_row = len(table_rows)
@@ -305,19 +323,25 @@ class InfoSidebar(DataTable):
                     text = node.text
                     if len(text) > max_text_width:
                         text = text[: max_text_width - 1] + "…"
-                    marker = "v" if i == 0 else "•"
+                    marker = "vl" if i == 0 else "•"
                     table_rows.append(
                         [
                             Text.from_markup(f"[dim][{hl1}]{marker}[/{hl1}][/dim]"),
                             Text.from_markup(text),
                         ]
                     )
-                table_rows.append(
+                table_rows.extend(
                     [
-                        "",
-                        Text.from_markup(
-                            "[dim]\\[c]opy \\[v]paste \\[C]ycle \\[V]isit[/dim]"
-                        ),
+                        [
+                            "",
+                            Text.from_markup(
+                                "[dim]\\[c]opy  \\[v]paste \\[l]ink[/dim]"
+                            ),
+                        ],
+                        [
+                            "",
+                            Text.from_markup("[dim]\\[C]ycle \\[V]isit[/dim]"),
+                        ],
                     ]
                 )
 

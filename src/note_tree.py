@@ -9,13 +9,8 @@ from datetime import datetime
 
 from node import Node, lca_distance
 from subtrees import SUBTREES
-from utils import (
-    MONTH_ORDER,
-    add_subtree,
-    convert_to_nested_list,
-    normalize_indentation,
-    trigram_similarity,
-)
+from utils import (MONTH_ORDER, add_subtree, convert_to_nested_list,
+                   normalize_indentation, trigram_similarity)
 
 # Matches inline metadata suffix like " @{2026-03-05,b7,x}" at end of line
 METADATA_RE = re.compile(r"\s+@\{([^}]+)\}$")
@@ -577,7 +572,12 @@ class NoteTree:
         prior = self.get_bookmark_slot(node)
         if prior is not None:
             del self.bookmarks[prior]
-        # Steal the requested slot; displaced holder stays in copied list.
+        # Steal the requested slot; remove displaced holder from copied list entirely.
+        if current is not None:
+            try:
+                self.copied_nodes.remove(current)
+            except ValueError:
+                pass
         self.bookmarks[slot] = node
         if node not in self.copied_nodes:
             self.copied_nodes.append(node)
@@ -659,6 +659,29 @@ class NoteTree:
 
         matching_nodes = sorted(matching_nodes, key=lambda el: el[1])
         return matching_nodes
+
+    def get_journal_entries_in_day_radius(self, before: int, after: int) -> list:
+        from datetime import date, timedelta
+
+        today = date.today()
+        start_md = (today - timedelta(days=before)).strftime("%m-%d")
+        end_md = (today + timedelta(days=after)).strftime("%m-%d")
+        broad_re = re.compile(r"\[(\d{4}-(\d{2}-\d{2})).*?\]")
+        matching = []
+        for n in self.get_node_list():
+            m = broad_re.search(n.text)
+            if not m:
+                continue
+            full_date, md = m.group(1), m.group(2)
+            if start_md <= end_md:
+                in_range = start_md <= md <= end_md
+            else:  # year wrap-around (e.g. Dec 28 + 7 days = Jan 4)
+                in_range = md >= start_md or md <= end_md
+            if in_range:
+                matching.append((n, full_date))
+        # Sort by MM-DD first, then by year within the same day
+        matching.sort(key=lambda x: (x[1][5:], x[1][:4]))
+        return matching
 
     def find_by_query(self, query, global_scope=True, match_path=False, threshold=0.05):
         """User-initiated search (:? and :?? commands, and :run path resolution).

@@ -22,7 +22,8 @@ from search_state import SearchState
 from sticky_notes import StickyNotesScreen, _parse_flashcard
 from themes import THEMES
 from timer import Timer
-from utils import apply_input_substitutions, extract_path_references, play_sound_effect
+from utils import (apply_input_substitutions, extract_path_references,
+                   play_sound_effect)
 from widgets.doodle_pane import DoodlePane
 from widgets.info_sidebar import InfoSidebar
 from widgets.status_bar import StatusBar
@@ -333,6 +334,7 @@ class ForestApp(App):
                 self.input_widget.display = False
 
                 self.note_tree_widget.render()
+                self.note_tree_widget._fix_cursor_position(node)
             else:
                 self._node_being_edited = None
                 self.input_widget.value = ""

@@ -632,7 +632,6 @@ class NoteTreeWidget(Tree):
                 self.render()
 
                 self._fix_cursor_position(_node)
-                self._scroll_cursor_into_margin()
 
     def on_mouse_scroll_down(self, event):
         event.prevent_default()
@@ -938,9 +937,9 @@ class NoteTreeWidget(Tree):
         top = int(self.scroll_offset.y)
         bottom = top + height - 1
         if line < top + margin:
-            self.scroll_to(y=max(0, line - margin), animate=False)
+            self.scroll_to(y=max(0, line - margin), animate=False, force=True)
         elif line > bottom - margin:
-            self.scroll_to(y=line - height + 1 + margin, animate=False)
+            self.scroll_to(y=line - height + 1 + margin, animate=False, force=True)
 
     def watch_cursor_line(self, previous_line: int, line: int) -> None:
         node = self._get_node(line)

@@ -369,63 +369,68 @@ class InfoSidebar(DataTable):
             logging.info("update_data: building perpetual_journal table")
             self.show_header = False
 
-            # ON THIS DAY
-            # get the current ymd
-            month_day = datetime.now().strftime("%m-%d")
-            date_regex = r"\[(\d{4}-" + month_day + r").*\]"
-            # date_regex = r"\[(\d{4}-04-12).*\]"
-            logging.info(f"Searching for regex: {date_regex}")
-            node_matches = self.app.note_tree.get_entries_matching_regex(
-                date_regex, group_index=1
+            before = self.app.config.perpetual_journal_radius_before
+            after = self.app.config.perpetual_journal_radius_after
+            node_matches = self.app.note_tree.get_journal_entries_in_day_radius(
+                before, after
             )
-            logging.info(f"Found matches: {node_matches}")
+            logging.info(
+                f"perpetual_journal: -{before}/+{after} days, found {len(node_matches)} entries"
+            )
 
+            from datetime import date as _date
+
+            today_md = _date.today().strftime("%m-%d")
+            hl1 = self.app.theme_variables.get("HL1", "white")
+            strip_re = r"\[\d{4}-\d{2}-\d{2}.*?\]\s*"
             table_rows.extend(
                 [
-                    ["", Text.from_markup("[b]On This Day[/b]")],
+                    ["", Text.from_markup(f"[b]-{before} / +{after} days[/b]")],
                     ["", ""],
                     ["Date", "Entry"],
                 ]
             )
-            for node, match_str in node_matches:
-                text = node.text if node else ""
-                text = re.sub(date_regex, "", text).strip()
-                lines = textwrap.wrap(text, width - 16)
-                for i_l, line in enumerate(lines):
-                    table_rows.append([match_str if i_l == 0 else "", line])
-
-            # ON THIS MONTH
-            # get the current ymd
-            month = datetime.now().strftime("%m")
-            date_regex = r"\[(\d{4}-" + month + r"-\d{2}).*\]"
-            # date_regex = r"\[(\d{4}-04-12).*\]"
-            logging.info(f"Searching for regex: {date_regex}")
-            node_matches = self.app.note_tree.get_entries_matching_regex(
-                date_regex, group_index=1
+            today_inserted = any(
+                match_str[5:] == today_md for _, match_str in node_matches
             )
-            logging.info(f"Found matches: {node_matches}")
-
-            table_rows.extend(
-                [
-                    ["", ""],
+            today_row_added = False
+            for node, match_str in node_matches:
+                entry_md = match_str[5:]  # MM-DD from YYYY-MM-DD
+                # Insert "Today" placeholder before the first entry past today's MM-DD
+                if not today_inserted and not today_row_added and entry_md > today_md:
+                    table_rows.append(
+                        [
+                            Text.from_markup(f"[{hl1}]{today_md}[/{hl1}]"),
+                            Text.from_markup("Today"),
+                        ]
+                    )
+                    today_row_added = True
+                text = node.text if node else ""
+                text = re.sub(strip_re, "", text).strip()
+                lines = textwrap.wrap(text, width - 16)
+                is_today = entry_md == today_md
+                for i_l, line in enumerate(lines):
+                    if is_today:
+                        date_cell = (
+                            Text.from_markup(f"[{hl1}]{match_str}[/{hl1}]")
+                            if i_l == 0
+                            else ""
+                        )
+                        table_rows.append([date_cell, Text.from_markup(f"{line}")])
+                    else:
+                        table_rows.append([match_str if i_l == 0 else "", line])
+            # If today falls after all entries (or list is empty), append the placeholder
+            if not today_inserted and not today_row_added:
+                table_rows.append(
                     [
-                        "",
-                        Text.from_markup("[b]In This Month[/b]"),
-                    ],
-                    ["", ""],
-                    ["Date", "Entry"],
-                ]
-            )
-            for node, match_str in node_matches:
-                text = node.text if node else ""
-                text = re.sub(date_regex, "", text).strip()
-                lines = textwrap.wrap(text, width - 16)
-                for i_l, line in enumerate(lines):
-                    table_rows.append([match_str if i_l == 0 else "", line])
+                        Text.from_markup(f"[{hl1}]{today_md}[/{hl1}]"),
+                        Text.from_markup("Today"),
+                    ]
+                )
 
             self.clear(columns=True)
-            self.add_columns("", "")  # *table_rows[0])
-            self.add_rows(table_rows)  # [1:])
+            self.add_columns("", "")
+            self.add_rows(table_rows)
             logging.info(
                 f"update_data: perpetual_journal table built with {len(table_rows)} rows, calling refresh()"
             )

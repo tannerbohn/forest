@@ -24,6 +24,8 @@ class DoodlePane(Static):
     COLOR_KEYS = ("foreground", "HL1", None)  # None = eraser
     OPACITY = 0.5
     ANCESTOR_OPACITY = 0.2
+    ERASE_RADIUS_X = 2  # cells erased left/right from the cursor
+    ERASE_RADIUS_Y = 1  # cells erased up/down from the cursor
 
     def __init__(self, **kwargs):
         super().__init__("", **kwargs)
@@ -205,6 +207,18 @@ class DoodlePane(Static):
     def _is_eraser(self) -> bool:
         return self.COLOR_KEYS[self._color_idx] is None
 
+    def _erase_cell(self, cell_x: int, cell_y: int):
+        if cell_x < 0 or cell_x >= self._width:
+            return
+        if cell_y < 0 or cell_y >= self.CANVAS_HEIGHT - 1:
+            return
+        if self._current_key is None:
+            return
+        canvas = self._canvases.get(self._current_key)
+        if not canvas:
+            return
+        canvas["cells"].pop(self._cell_to_storage(cell_x, cell_y), None)
+
     def _paint_dot(self, cell_x: int, cell_y: int):
         if cell_x < 0 or cell_x >= self._width:
             return
@@ -216,12 +230,9 @@ class DoodlePane(Static):
         self._stroke_cells.add(key)
 
         if self._is_eraser():
-            if self._current_key is None:
-                return
-            canvas = self._canvases.get(self._current_key)
-            if not canvas:
-                return
-            canvas["cells"].pop(key, None)
+            for dy in range(-self.ERASE_RADIUS_Y, self.ERASE_RADIUS_Y + 1):
+                for dx in range(-self.ERASE_RADIUS_X, self.ERASE_RADIUS_X + 1):
+                    self._erase_cell(cell_x + dx, cell_y + dy)
             return
 
         if not self._ensure_doodle_id():

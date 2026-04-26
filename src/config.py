@@ -15,6 +15,8 @@ DEFAULT_CONFIG = {
     "margin_width": 30,
     "scroll_margin": 5,
     "doodle_pane_visible": True,
+    "perpetual_journal_radius_before": 7,
+    "perpetual_journal_radius_after": 14,
 }
 
 
@@ -105,3 +107,11 @@ class Config:
     @property
     def doodle_pane_visible(self):
         return bool(self.get("doodle_pane_visible", True))
+
+    @property
+    def perpetual_journal_radius_before(self):
+        return max(0, int(self.get("perpetual_journal_radius_before", 7)))
+
+    @property
+    def perpetual_journal_radius_after(self):
+        return max(0, int(self.get("perpetual_journal_radius_after", 14)))

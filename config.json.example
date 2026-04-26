@@ -8,7 +8,5 @@
     "margin_side": "right",
     "margin_width": 30,
     "scroll_margin": 5,
-    "doodle_pane_visible": true,
-    "perpetual_journal_radius_before": 7,
-    "perpetual_journal_radius_after": 14
+    "doodle_pane_visible": true
 }

@@ -14,7 +14,6 @@ from textual.theme import Theme
 from textual.widgets import Footer, Input, Markdown, ProgressBar, Tree
 
 from config import Config
-from copied_list import CopiedList
 from node import Node
 from note_tree import NoteTree
 from note_tree_widget import NoteTreeWidget
@@ -133,7 +132,6 @@ class ForestApp(App):
 
         self.sound_effects_enabled = self.config.sound_effects_enabled
         self.timer = Timer(self)
-        self.copied_list = CopiedList(self)
         self._sticky_note_state = None
 
         self._command_history: list[str] = []
@@ -315,368 +313,405 @@ class ForestApp(App):
         logging.info("action_cycle_side_panel called")
         self.info_sidebar.cycle_mode()
 
+    def _copied_refresh_sidebar(self) -> None:
+        sidebar = getattr(self, "info_sidebar", None)
+        if sidebar is None or not sidebar.display or sidebar._search_results:
+            return
+        sidebar.update_data()
+
+    def copied_toggle(self, node) -> None:
+        nodes = self.note_tree.copied_nodes
+        if node in nodes:
+            nodes.remove(node)
+            self.note_tree.remove_bookmark_for(node)
+        else:
+            nodes.append(node)
+        self.note_tree.has_unsaved_operations = True
+        self.status_bar.needs_saving = True
+        self._copied_refresh_sidebar()
+
+    def _copied_prune(self) -> bool:
+        nodes = self.note_tree.copied_nodes
+        live_ids = {
+            id(n) for n in self.note_tree.root.get_node_list(only_visible=False)
+        }
+        nodes[:] = [n for n in nodes if id(n) in live_ids]
+        return bool(nodes)
+
+    def _copied_rotate(self) -> None:
+        # Only rotate the non-bookmarked tail; bookmarked nodes stay pinned
+        # at the start of the list (= bottom of sidebar) in their order.
+        nodes = self.note_tree.copied_nodes
+        k = self.note_tree.bookmark_split_index()
+        tail = nodes[k:]
+        if len(tail) <= 1:
+            return
+        nodes[k:] = [tail[-1]] + tail[:-1]
+        self.note_tree.has_unsaved_operations = True
+        self.status_bar.needs_saving = True
+
+    def copied_jump_to_next(self) -> None:
+        if not self.note_tree.copied_nodes:
+            self.notify("No copied notes.")
+            return
+        if not self._copied_prune():
+            self._copied_refresh_sidebar()
+            return
+        target = self.note_tree.copied_nodes[-1]
+        self._copied_rotate()
+        self.note_tree_widget.update_location(
+            context_node=target.parent if target.parent else target,
+            line_node=target,
+        )
+        self._copied_refresh_sidebar()
+
+    def copied_cycle_target(self) -> None:
+        if not self.note_tree.copied_nodes:
+            self.notify("No copied notes.")
+            return
+        if not self._copied_prune():
+            self._copied_refresh_sidebar()
+            return
+        self._copied_rotate()
+        self._copied_refresh_sidebar()
+
+    def _toggle_archive_tag(self, node, add: bool) -> bool:
+        has_tag = "#ARCHIVE" in node.text
+        if add == has_tag:
+            return False
+        self.note_tree.push_undo(node.parent or node)
+        if add:
+            words = node.text.split()
+            words.append("#ARCHIVE")
+        else:
+            words = [w for w in node.text.split() if w != "#ARCHIVE"]
+        node.text = " ".join(words)
+        node.post_text_update()
+        self.note_tree.has_unsaved_operations = True
+        self.note_tree.update_visible_node_list()
+        self.note_tree_widget.render()
+        return True
+
+    @staticmethod
+    def _filter_flashcard_answers(nodes):
+        """Drop the first-child answer node of any child-answer flashcard."""
+        answer_ids = set()
+        for n in nodes:
+            fc = _parse_flashcard(n)
+            if fc and fc[2] and n.children:  # fc[2] = is_child_answer
+                answer_ids.add(id(n.children[0]))
+        return [n for n in nodes if id(n) not in answer_ids]
+
+    def _open_sticky_screen(
+        self,
+        nodes,
+        title,
+        hl_colors,
+        cursor_index=0,
+        refresh_state_nodes_on_dismiss=False,
+    ):
+        self._sticky_note_state = {
+            "nodes": nodes,
+            "title": title,
+            "hl_colors": hl_colors,
+            "cursor_index": cursor_index,
+        }
+        self.status_bar.has_sticky_recovery = True
+        screen = StickyNotesScreen(nodes, title_text=title, hl_colors=hl_colors)
+        screen._cursor_index = min(cursor_index, max(0, len(nodes) - 1))
+
+        def on_dismiss(node):
+            self._sticky_note_state["cursor_index"] = screen._cursor_index
+            if refresh_state_nodes_on_dismiss:
+                self._sticky_note_state["nodes"] = nodes
+            if node is not None:
+                self.note_tree_widget.update_location(
+                    context_node=node.parent if node.parent else node,
+                    line_node=node,
+                )
+
+        self.push_screen(screen, callback=on_dismiss)
+
+    def _cmd_journal(self, cmd_str):
+        text = cmd_str[3:]
+        self.note_tree.push_undo(self.note_tree.root)
+        self.note_tree_widget.add_journal_entry(text)
+
+    def _cmd_search(self, cmd_str):
+        global_scope = cmd_str.startswith("?*") or cmd_str.startswith("??")
+        query = cmd_str[2:].strip() if global_scope else cmd_str[1:].strip()
+        query = query.replace(" › ", ">").replace(" > ", ">")
+
+        if not query:
+            cursor_node = self.note_tree_widget.cursor_node
+            if not cursor_node:
+                self.notify("No note selected.")
+                return
+            results = self.note_tree.find_by_similarity(cursor_node._node)
+            results = [r for r in results if r[1] >= 0.10]
+            if not global_scope:
+                results = [r for r in results if r[3]]
+            matching_nodes = [r[0] for r in results]
+            display_query = ""
+        else:
+            matching_nodes = self.note_tree.find_by_query(
+                query,
+                global_scope=global_scope,
+                match_path=">" in query,
+                threshold=0.1,
+            )[:20]
+            display_query = query
+
+        if not matching_nodes:
+            self.notify("No search results found.")
+            return
+
+        self._search.query = query
+        self._search.context_node = self.note_tree.context_node
+        self._search.is_local = not global_scope
+        self._search.matches = matching_nodes
+        self.status_bar.search_mode = True
+        try:
+            cursor_node_obj = self.note_tree_widget.cursor_node._node
+        except AttributeError:
+            cursor_node_obj = None
+        self._search.pre_search_position = (
+            self.note_tree.context_node,
+            cursor_node_obj,
+        )
+        self.info_sidebar.show_search_results(matching_nodes, display_query)
+        self.update_search_view()
+
+    def _cmd_help(self, cmd_str):
+        self.info_sidebar.show_help()
+
+    def _cmd_doodle(self, cmd_str):
+        sub = cmd_str[len("doodle ") :].strip()
+        if sub == "clear":
+            self.doodle_pane.clear_current()
+        elif sub == "show":
+            self.doodle_pane.set_visible(True)
+        elif sub == "hide":
+            self.doodle_pane.set_visible(False)
+
+    def _cmd_run(self, cmd_str):
+        parts = cmd_str.split(maxsplit=1)
+        index = 0
+        if len(parts) > 1:
+            try:
+                index = int(parts[1])
+            except ValueError:
+                self.notify("Usage: :run or :run <index>")
+                return
+        if not self.note_tree_widget.cursor_node:
+            self.notify("No note selected")
+            return
+        node = self.note_tree_widget.cursor_node._node
+        if node.text.startswith("!"):
+            try:
+                logging.info("Running command")
+                node.run_command()
+            except Exception as e:
+                logging.error(f"Could not run command: {e}")
+            return
+        paths = extract_path_references(node.text)
+        if not paths:
+            self.notify("No ! command or [[path]] reference found")
+            return
+        if index >= len(paths):
+            self.notify(f"Index {index} out of range (found {len(paths)} path(s))")
+            return
+        path_query = paths[index].replace(" › ", ">").replace(" > ", ">")
+        matching_nodes = self.note_tree.find_by_path_beam(path_query)
+        if not matching_nodes:
+            self.notify(f"No path match for: {path_query}")
+            return
+        target = matching_nodes[0]
+        self.note_tree_widget.update_location(
+            context_node=target.parent if target.parent else target,
+            line_node=target,
+        )
+
+    def _cmd_collapse(self, cmd_str):
+        ctx = self.note_tree.context_node
+        descendants = ctx.get_node_list(
+            only_visible=False,
+            hide_done=False,
+            hide_archive=self.note_tree.hide_archive,
+        )[1:]
+        if not any(n.children for n in descendants):
+            return
+        self.note_tree.push_undo(ctx)
+        for n in descendants:
+            if n.children:
+                n.is_collapsed = True
+        self.note_tree.update_visible_node_list()
+        self.note_tree.has_unsaved_operations = True
+        self.note_tree_widget.render()
+
+    def _cmd_insert(self, cmd_str):
+        subtree_name = cmd_str.split(" ", 1)[-1]
+        self.note_tree_widget.add_subtree(subtree_name)
+
+    def _cmd_random(self, cmd_str):
+        self.note_tree_widget.jump_to_random(global_scope=cmd_str == "random*")
+
+    def _cmd_timer_cancel(self, cmd_str):
+        self.timer.cancel()
+
+    def _cmd_timer(self, cmd_str):
+        self.timer.start(cmd_str[6:].strip())
+
+    def _cmd_sticky(self, cmd_str):
+        global_scope = cmd_str.startswith("sn*")
+        if global_scope:
+            filter_arg = cmd_str[3:].strip()
+            scope_root = self.note_tree.root
+        else:
+            filter_arg = cmd_str[2:].strip()
+            scope_root = self.note_tree.context_node
+        all_nodes = scope_root.get_node_list(
+            only_visible=False,
+            hide_done=True,
+            hide_archive=self.note_tree.hide_archive,
+        )
+        all_nodes = [
+            n
+            for n in all_nodes
+            if n.parent is not None and n is not self.note_tree.context_node
+        ]
+
+        if not filter_arg:
+            matched = [n for n in all_nodes if n.highlight_index is not None]
+            title = "#HL"
+        elif filter_arg in ("#HL1", "#HL2", "#HL3"):
+            hl_idx = int(filter_arg[-1]) - 1
+            matched = [n for n in all_nodes if n.highlight_index == hl_idx]
+            title = filter_arg
+        else:
+            try:
+                pat = re.compile(filter_arg, re.IGNORECASE)
+            except re.error:
+                pat = re.compile(re.escape(filter_arg), re.IGNORECASE)
+            matched = [n for n in all_nodes if pat.search(n.text)]
+            title = f"/{filter_arg}/"
+
+        matched = self._filter_flashcard_answers(matched)
+
+        if not matched:
+            self.notify("No matching notes found.")
+            return
+
+        hl_colors = {
+            0: self.theme_variables.get("HL1", "#039ad7"),
+            1: self.theme_variables.get("HL2", "#dca708"),
+            2: self.theme_variables.get("HL3", "#c44f1f"),
+        }
+        self._open_sticky_screen(matched, title, hl_colors)
+
+    def _cmd_snr(self, cmd_str):
+        state = self._sticky_note_state
+        if not state:
+            self.notify("No sticky note board to recover.")
+            return
+        all_tree_ids = {
+            id(n)
+            for n in self.note_tree.root.get_node_list(
+                only_visible=False,
+                hide_done=False,
+                hide_archive=self.note_tree.hide_archive,
+            )
+        }
+        valid_nodes = [
+            n for n in state["nodes"] if id(n) in all_tree_ids and not n.is_done()
+        ]
+        valid_nodes = self._filter_flashcard_answers(valid_nodes)
+        if not valid_nodes:
+            self.notify("All notes from that board have been removed.")
+            self._sticky_note_state = None
+            self.status_bar.has_sticky_recovery = False
+            return
+        self._open_sticky_screen(
+            valid_nodes,
+            state["title"],
+            state["hl_colors"],
+            cursor_index=state["cursor_index"],
+            refresh_state_nodes_on_dismiss=True,
+        )
+
+    def _cmd_archive(self, cmd_str):
+        parts = cmd_str.split(None, 1)
+        sub = parts[1].strip() if len(parts) > 1 else ""
+        if sub == "set":
+            node = self.note_tree_widget.cursor_node._node
+            if self._toggle_archive_tag(node, add=True) and self.note_tree.hide_archive:
+                self.note_tree_widget.move_cursor_to_line(0)
+        elif sub == "unset":
+            self._toggle_archive_tag(self.note_tree_widget.cursor_node._node, add=False)
+        elif sub == "show":
+            self.note_tree.hide_archive = False
+            self.status_bar.hide_archive = False
+            self.note_tree.update_visible_node_list()
+            self.note_tree_widget.render()
+        elif sub == "hide":
+            self.note_tree.hide_archive = True
+            self.status_bar.hide_archive = True
+            cursor = self.note_tree_widget.cursor_node
+            cursor_node = cursor._node if cursor else None
+            self.note_tree.update_visible_node_list()
+            self.note_tree_widget.render()
+            if cursor_node and cursor_node.is_archived():
+                self.note_tree_widget.move_cursor_to_line(0)
+            elif cursor_node:
+                self.note_tree_widget._fix_cursor_position(cursor_node)
+        else:
+            self.notify("Usage: archive set|unset|show|hide")
+            return
+        self.info_sidebar.update_data()
+
+    def _dispatch_command(self, cmd_str):
+        # Order matters: longer/more specific prefixes before shorter ones.
+        handlers = (
+            (lambda c: c.startswith("j+ "), self._cmd_journal),
+            (lambda c: c.startswith("?"), self._cmd_search),
+            (lambda c: c == "help", self._cmd_help),
+            (lambda c: c.startswith("doodle "), self._cmd_doodle),
+            (lambda c: c == "run" or c.startswith("run "), self._cmd_run),
+            (lambda c: c == "collapse", self._cmd_collapse),
+            (lambda c: c.startswith("insert "), self._cmd_insert),
+            (lambda c: c in ("random", "random*"), self._cmd_random),
+            (lambda c: c == "timer cancel", self._cmd_timer_cancel),
+            (lambda c: c.startswith("timer "), self._cmd_timer),
+            (
+                lambda c: c == "sn" or c.startswith("sn ") or c.startswith("sn*"),
+                self._cmd_sticky,
+            ),
+            (lambda c: c == "snr", self._cmd_snr),
+            (lambda c: c == "archive" or c.startswith("archive "), self._cmd_archive),
+        )
+        for matches, handler in handlers:
+            if matches(cmd_str):
+                handler(cmd_str)
+                return
+
     def on_input_submitted(self, event):
         logging.info(f"INPUT SUBMITTED: {event}")
         if self._node_being_edited:
             new_text = event.value.strip()
             if new_text:
                 new_text = apply_input_substitutions(new_text)
-
                 node = self._node_being_edited._node
-
                 self.note_tree.push_undo(node.parent)
                 node.text = new_text
                 node.post_text_update()
                 self.note_tree.has_unsaved_operations = True
-
-                self._node_being_edited = None
-                self.input_widget.value = ""
-                self.input_widget.display = False
-
                 self.note_tree_widget.render()
                 self.note_tree_widget._fix_cursor_position(node)
-            else:
-                self._node_being_edited = None
-                self.input_widget.value = ""
-                self.input_widget.display = False
-                self.note_tree_widget.focus()
-
+            self._node_being_edited = None
         else:
-            # we're in command mode
             cmd_str = event.value.strip()
             self.record_command(cmd_str)
-            if cmd_str.startswith("j+ "):
-                text = cmd_str[3:]
-                self.note_tree.push_undo(self.note_tree.root)
-                self.note_tree_widget.add_journal_entry(text)
-            elif cmd_str.startswith("?"):
-                global_scope = False
-                if cmd_str.startswith("?*") or cmd_str.startswith("??"):
-                    global_scope = True
-                    query = cmd_str[2:].strip()
-                else:
-                    query = cmd_str[1:].strip()
-
-                # Normalize path separators (handle both " › " and " > ")
-                query = query.replace(" › ", ">").replace(" > ", ">")
-
-                # Empty query: find similar notes
-                if not query:
-                    cursor_node = self.note_tree_widget.cursor_node
-                    if not cursor_node:
-                        self.notify("No note selected.")
-                        self.input_widget.value = ""
-                        self.input_widget.display = False
-                        self.note_tree_widget.focus()
-                        return
-                    node = cursor_node._node
-                    results = self.note_tree.find_by_similarity(node)
-                    results = [
-                        (n, sim, d, ctx) for n, sim, d, ctx in results if sim >= 0.10
-                    ]
-                    if not global_scope:
-                        results = [
-                            (n, sim, d, ctx) for n, sim, d, ctx in results if ctx
-                        ]
-                    matching_nodes = [n for n, sim, d, ctx in results]
-                    display_query = ""
-                else:
-                    # Enable path matching if query contains ">"
-                    match_path = ">" in query
-                    matching_nodes = self.note_tree.find_by_query(
-                        query,
-                        global_scope=global_scope,
-                        match_path=match_path,
-                        threshold=0.1,
-                    )[:20]
-                    display_query = query
-
-                if not matching_nodes:
-                    self.notify("No search results found.")
-                    self.input_widget.value = ""
-                    self.input_widget.display = False
-                    self.note_tree_widget.focus()
-                    return
-
-                self._search.query = query
-                self._search.context_node = self.note_tree.context_node
-                self._search.is_local = not global_scope
-                self._search.matches = matching_nodes
-                self.status_bar.search_mode = True
-                try:
-                    self._search.pre_search_position = (
-                        self.note_tree.context_node,
-                        self.note_tree_widget.cursor_node._node,
-                    )
-                except AttributeError:
-                    self._search.pre_search_position = (
-                        self.note_tree.context_node,
-                        None,
-                    )
-                self.info_sidebar.show_search_results(matching_nodes, display_query)
-                self.update_search_view()
-
-            elif cmd_str == "help":
-                self.info_sidebar.show_help()
-            elif cmd_str == "doodle clear":
-                self.doodle_pane.clear_current()
-            elif cmd_str == "doodle show":
-                self.doodle_pane.set_visible(True)
-            elif cmd_str == "doodle hide":
-                self.doodle_pane.set_visible(False)
-            elif cmd_str == "run" or cmd_str.startswith("run "):
-                parts = cmd_str.split(maxsplit=1)
-                index = 0
-                if len(parts) > 1:
-                    try:
-                        index = int(parts[1])
-                    except ValueError:
-                        self.notify("Usage: :run or :run <index>")
-                        self.input_widget.value = ""
-                        self.input_widget.display = False
-                        self.note_tree_widget.focus()
-                        return
-
-                if not self.note_tree_widget.cursor_node:
-                    self.notify("No note selected")
-                else:
-                    node = self.note_tree_widget.cursor_node._node
-                    if node.text.startswith("!"):
-                        try:
-                            logging.info("Running command")
-                            node.run_command()
-                        except Exception as e:
-                            logging.error(f"Could not run command: {e}")
-                    else:
-                        paths = extract_path_references(node.text)
-                        if paths:
-                            if index >= len(paths):
-                                self.notify(
-                                    f"Index {index} out of range (found {len(paths)} path(s))"
-                                )
-                            else:
-                                path_query = paths[index]
-                                path_query = path_query.replace(" › ", ">").replace(
-                                    " > ", ">"
-                                )
-                                matching_nodes = self.note_tree.find_by_path_beam(
-                                    path_query
-                                )
-                                if matching_nodes:
-                                    target_node = matching_nodes[0]
-                                    self.note_tree_widget.update_location(
-                                        context_node=(
-                                            target_node.parent
-                                            if target_node.parent
-                                            else target_node
-                                        ),
-                                        line_node=target_node,
-                                    )
-                                else:
-                                    self.notify(f"No path match for: {path_query}")
-                        else:
-                            self.notify("No ! command or [[path]] reference found")
-            elif cmd_str == "collapse":
-                ctx = self.note_tree.context_node
-                descendants = ctx.get_node_list(
-                    only_visible=False,
-                    hide_done=False,
-                    hide_archive=self.note_tree.hide_archive,
-                )[1:]
-                if any(n.children for n in descendants):
-                    self.note_tree.push_undo(ctx)
-                    for n in descendants:
-                        if n.children:
-                            n.is_collapsed = True
-                    self.note_tree.update_visible_node_list()
-                    self.note_tree.has_unsaved_operations = True
-                    self.note_tree_widget.render()
-            elif cmd_str.startswith("insert "):
-                subtree_name = cmd_str.split(" ", 1)[-1]
-                self.note_tree_widget.add_subtree(subtree_name)
-            elif cmd_str in ("random", "random*"):
-                global_scope = cmd_str == "random*"
-                self.note_tree_widget.jump_to_random(global_scope=global_scope)
-            elif cmd_str == "timer cancel":
-                self.timer.cancel()
-            elif cmd_str.startswith("timer "):
-                duration_str = cmd_str[6:].strip()
-                self.timer.start(duration_str)
-            elif (
-                cmd_str.startswith("sn*")
-                or cmd_str == "sn"
-                or cmd_str.startswith("sn ")
-            ):
-                if cmd_str.startswith("sn*"):
-                    filter_arg = cmd_str[3:].strip()
-                    all_nodes = self.note_tree.root.get_node_list(
-                        only_visible=False,
-                        hide_done=True,
-                        hide_archive=self.note_tree.hide_archive,
-                    )
-                else:
-                    filter_arg = cmd_str[2:].strip()
-                    all_nodes = self.note_tree.context_node.get_node_list(
-                        only_visible=False,
-                        hide_done=True,
-                        hide_archive=self.note_tree.hide_archive,
-                    )
-                # Skip the root node and the context node itself
-                all_nodes = [
-                    n
-                    for n in all_nodes
-                    if n.parent is not None and n is not self.note_tree.context_node
-                ]
-
-                if not filter_arg:
-                    matched = [n for n in all_nodes if n.highlight_index is not None]
-                    title = "#HL"
-                elif filter_arg in ("#HL1", "#HL2", "#HL3"):
-                    hl_idx = int(filter_arg[-1]) - 1
-                    matched = [n for n in all_nodes if n.highlight_index == hl_idx]
-                    title = filter_arg
-                else:
-                    try:
-                        pat = re.compile(filter_arg, re.IGNORECASE)
-                    except re.error:
-                        pat = re.compile(re.escape(filter_arg), re.IGNORECASE)
-                    matched = [n for n in all_nodes if pat.search(n.text)]
-                    title = f"/{filter_arg}/"
-
-                # Filter out first-child answer nodes of child-answer flashcards
-                answer_ids = set()
-                for n in matched:
-                    fc = _parse_flashcard(n)
-                    if fc and fc[2] and n.children:  # fc[2] = is_child_answer
-                        answer_ids.add(id(n.children[0]))
-                matched = [n for n in matched if id(n) not in answer_ids]
-
-                if not matched:
-                    self.notify("No matching notes found.")
-                else:
-                    hl_colors = {
-                        0: self.theme_variables.get("HL1", "#039ad7"),
-                        1: self.theme_variables.get("HL2", "#dca708"),
-                        2: self.theme_variables.get("HL3", "#c44f1f"),
-                    }
-                    self._sticky_note_state = {
-                        "nodes": matched,
-                        "title": title,
-                        "hl_colors": hl_colors,
-                        "cursor_index": 0,
-                    }
-                    self.status_bar.has_sticky_recovery = True
-                    screen = StickyNotesScreen(
-                        matched, title_text=title, hl_colors=hl_colors
-                    )
-
-                    def on_dismiss(node):
-                        self._sticky_note_state["cursor_index"] = screen._cursor_index
-                        if node is not None:
-                            self.note_tree_widget.update_location(
-                                context_node=node.parent if node.parent else node,
-                                line_node=node,
-                            )
-
-                    self.push_screen(screen, callback=on_dismiss)
-            elif cmd_str == "snr":
-                if self._sticky_note_state:
-                    state = self._sticky_note_state
-                    all_tree_nodes = set(
-                        id(n)
-                        for n in self.note_tree.root.get_node_list(
-                            only_visible=False,
-                            hide_done=False,
-                            hide_archive=self.note_tree.hide_archive,
-                        )
-                    )
-                    valid_nodes = [
-                        n
-                        for n in state["nodes"]
-                        if id(n) in all_tree_nodes and not n.is_done()
-                    ]
-                    # Filter out first-child answer nodes of child-answer flashcards
-                    answer_ids = set()
-                    for n in valid_nodes:
-                        fc = _parse_flashcard(n)
-                        if fc and fc[2] and n.children:  # fc[2] = is_child_answer
-                            answer_ids.add(id(n.children[0]))
-                    valid_nodes = [n for n in valid_nodes if id(n) not in answer_ids]
-                    if not valid_nodes:
-                        self.notify("All notes from that board have been removed.")
-                        self._sticky_note_state = None
-                        self.status_bar.has_sticky_recovery = False
-                    else:
-                        screen = StickyNotesScreen(
-                            valid_nodes,
-                            title_text=state["title"],
-                            hl_colors=state["hl_colors"],
-                        )
-                        screen._cursor_index = min(
-                            state["cursor_index"], len(valid_nodes) - 1
-                        )
-
-                        def on_dismiss(node):
-                            self._sticky_note_state["cursor_index"] = (
-                                screen._cursor_index
-                            )
-                            self._sticky_note_state["nodes"] = valid_nodes
-                            if node is not None:
-                                self.note_tree_widget.update_location(
-                                    context_node=node.parent if node.parent else node,
-                                    line_node=node,
-                                )
-
-                        self.push_screen(screen, callback=on_dismiss)
-                else:
-                    self.notify("No sticky note board to recover.")
-            elif cmd_str == "archive" or cmd_str.startswith("archive "):
-                parts = cmd_str.split(None, 1)
-                sub = parts[1].strip() if len(parts) > 1 else ""
-                if sub == "set":
-                    node = self.note_tree_widget.cursor_node._node
-                    if "#ARCHIVE" not in node.text:
-                        self.note_tree.push_undo(node.parent or node)
-                        words = node.text.split()
-                        words.append("#ARCHIVE")
-                        node.text = " ".join(words)
-                        node.post_text_update()
-                        self.note_tree.has_unsaved_operations = True
-                        self.note_tree.update_visible_node_list()
-                        self.note_tree_widget.render()
-                        if self.note_tree.hide_archive:
-                            self.note_tree_widget.move_cursor_to_line(0)
-                elif sub == "unset":
-                    node = self.note_tree_widget.cursor_node._node
-                    if "#ARCHIVE" in node.text:
-                        self.note_tree.push_undo(node.parent or node)
-                        words = [w for w in node.text.split() if w != "#ARCHIVE"]
-                        node.text = " ".join(words)
-                        node.post_text_update()
-                        self.note_tree.has_unsaved_operations = True
-                        self.note_tree.update_visible_node_list()
-                        self.note_tree_widget.render()
-                elif sub == "show":
-                    self.note_tree.hide_archive = False
-                    self.status_bar.hide_archive = False
-                    self.note_tree.update_visible_node_list()
-                    self.note_tree_widget.render()
-                elif sub == "hide":
-                    self.note_tree.hide_archive = True
-                    self.status_bar.hide_archive = True
-                    cursor = self.note_tree_widget.cursor_node
-                    cursor_node = cursor._node if cursor else None
-                    self.note_tree.update_visible_node_list()
-                    self.note_tree_widget.render()
-                    if cursor_node and cursor_node.is_archived():
-                        self.note_tree_widget.move_cursor_to_line(0)
-                    elif cursor_node:
-                        self.note_tree_widget._fix_cursor_position(cursor_node)
-                else:
-                    self.notify("Usage: archive set|unset|show|hide")
-
-                if sub in ("set", "unset", "show", "hide"):
-                    self.info_sidebar.update_data()
+            self._dispatch_command(cmd_str)
 
         self.input_widget.value = ""
         self.input_widget.display = False
@@ -752,7 +787,7 @@ class ForestApp(App):
                 event.stop()
                 node = self._search.current_node
                 if node is not None and node.parent is not None:
-                    self.copied_list.toggle(node)
+                    self.copied_toggle(node)
                     self.info_sidebar.update_search_highlight(self._search.index)
                     self.note_tree_widget.render()
             elif event.key in ["enter", "escape"]:

@@ -288,6 +288,7 @@ class StickyNotesScreen(ModalScreen):
         self.hl_colors = hl_colors or {}
         self._cols = 1
         self._cursor_index = 0
+        self._sticky_widgets = []
 
     def _get_sticky_colors(self):
         """Build sticky color list from theme variables, falling back to defaults."""
@@ -316,7 +317,7 @@ class StickyNotesScreen(ModalScreen):
         from rich.text import Text
 
         hl1 = self.app.theme_variables.get("HL1", "#039ad7")
-        widgets = list(self.query("StickyNoteWidget, BranchRootWidget"))
+        widgets = self._sticky_widgets
         total = len(widgets)
 
         # Build: 🌲 <filter in accent> — <path of focused note>  [idx/total]
@@ -343,13 +344,13 @@ class StickyNotesScreen(ModalScreen):
         self.query_one("#sn-title", Static).update(padded)
 
     def on_mount(self):
+        self._sticky_widgets = list(self.query("StickyNoteWidget, BranchRootWidget"))
         self._update_columns()
         self._update_title()
-        widgets = self.query("StickyNoteWidget, BranchRootWidget")
-        if widgets:
-            idx = min(self._cursor_index, len(widgets) - 1)
+        if self._sticky_widgets:
+            idx = min(self._cursor_index, len(self._sticky_widgets) - 1)
             self._cursor_index = idx
-            widgets[idx].focus()
+            self._sticky_widgets[idx].focus()
 
     def on_resize(self, event):
         self._update_columns()
@@ -361,7 +362,7 @@ class StickyNotesScreen(ModalScreen):
         grid.styles.grid_size_columns = self._cols
 
     def on_key(self, event):
-        widgets = list(self.query("StickyNoteWidget, BranchRootWidget"))
+        widgets = self._sticky_widgets
         if not widgets:
             return
 

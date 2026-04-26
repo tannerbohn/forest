@@ -125,32 +125,19 @@ class StatusBar(Static):
 
         self.update(content=text)
 
-    def watch_progress(self, new_value):
-        self.compose_content()
-
-    def watch_hide_done(self, new_value):
-        self.compose_content()
-
-    def watch_hide_archive(self, new_value):
-        self.compose_content()
-
-    def watch_context_node(self, new_value):
-        self.compose_content()
-
-    def watch_needs_saving(self, new_value):
-        self.compose_content()
-
-    def watch_search_mode(self, new_value):
-        self.compose_content()
-
-    def watch_search_progress(self, new_value):
-        self.compose_content()
-
-    def watch_timer_remaining(self, new_value):
-        self.compose_content()
-
-    def watch_has_sticky_recovery(self, new_value):
-        self.compose_content()
-
     def on_resize(self, event) -> None:
         self.compose_content()
+
+
+for _attr in (
+    "progress",
+    "context_node",
+    "needs_saving",
+    "hide_done",
+    "hide_archive",
+    "search_mode",
+    "search_progress",
+    "timer_remaining",
+    "has_sticky_recovery",
+):
+    setattr(StatusBar, f"watch_{_attr}", lambda self, _value: self.compose_content())

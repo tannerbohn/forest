@@ -15,8 +15,6 @@ DEFAULT_CONFIG = {
     "margin_width": 30,
     "scroll_margin": 5,
     "doodle_pane_visible": True,
-    "perpetual_journal_radius_before": 7,
-    "perpetual_journal_radius_after": 14,
 }
 
 
@@ -67,29 +65,10 @@ class Config:
         except Exception as e:
             logging.error(f"Error saving config: {e}")
 
-    @property
-    def sound_effects_enabled(self):
-        return self.get("sound_effects_enabled", True)
-
-    @property
-    def default_theme(self):
-        return self.get("default_theme", "forest")
-
-    @property
-    def log_level(self):
-        return self.get("log_level", "INFO")
-
-    @property
-    def undo_depth(self):
-        return self.get("undo_depth", 50)
-
-    @property
-    def auto_save(self):
-        return self.get("auto_save", True)
-
-    @property
-    def auto_save_interval(self):
-        return self.get("auto_save_interval", 5)
+    def __getattr__(self, name):
+        if name in DEFAULT_CONFIG:
+            return self.data.get(name, DEFAULT_CONFIG[name])
+        raise AttributeError(name)
 
     @property
     def margin_side(self):
@@ -107,11 +86,3 @@ class Config:
     @property
     def doodle_pane_visible(self):
         return bool(self.get("doodle_pane_visible", True))
-
-    @property
-    def perpetual_journal_radius_before(self):
-        return max(0, int(self.get("perpetual_journal_radius_before", 7)))
-
-    @property
-    def perpetual_journal_radius_after(self):
-        return max(0, int(self.get("perpetual_journal_radius_after", 14)))

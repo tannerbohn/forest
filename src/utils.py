@@ -40,22 +40,6 @@ def play_sound_effect(name):
         logging.warning(f"Could not play {name} sound: {e}")
 
 
-MONTH_ORDER = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-]
-
-
 def compose_clock_notify_contents():
     now = datetime.now()
     tz = now.astimezone().strftime("%Z")

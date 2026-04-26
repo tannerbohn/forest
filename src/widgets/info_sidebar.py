@@ -158,10 +158,7 @@ class InfoSidebar(DataTable):
             ]
         )
 
-        self.clear(columns=True)
-        self.add_columns("", "")
-        self.add_rows(table_rows)
-        self.refresh()
+        self._render_rows(table_rows)
 
     def show_search_results(self, matches, query="", current_index=0):
         """Display search results in panel with current match highlighted."""
@@ -209,7 +206,6 @@ class InfoSidebar(DataTable):
 
         # Track which DataTable row index corresponds to the highlighted match
         highlight_row = None
-        max_text_width = max(width - 6, 10)
 
         copied_nodes = self.app.note_tree.copied_nodes
         hl1 = self.app.theme_variables.get("HL1", "white")
@@ -218,10 +214,7 @@ class InfoSidebar(DataTable):
             is_current = idx == self._search_highlight_index
             is_copied = match_node in copied_nodes
 
-            # Row 1: marker + node text
-            node_text = match_node.text
-            if len(node_text) > max_text_width:
-                node_text = node_text[: max_text_width - 1] + "…"
+            node_text = self._truncate(match_node.text, width)
 
             if is_current:
                 marker = Text.from_markup("❯")
@@ -239,18 +232,13 @@ class InfoSidebar(DataTable):
             # Row 2: ancestor path (first few parts, dim)
             path_parts = match_node.get_path(include_self=False)[1:]  # skip root
             if path_parts:
-                path_parts = path_parts[:3]  # show up to 3 ancestor parts
-                path_preview = " › ".join(path_parts)
-                if len(path_preview) > max_text_width:
-                    path_preview = path_preview[: max_text_width - 1] + "…"
+                path_preview = self._truncate(" › ".join(path_parts[:3]), width)
                 table_rows.append(["", Text.from_markup(f"[dim]{path_preview}[/dim]")])
 
         if not matches:
             table_rows.append(["", "No results found"])
 
-        self.clear(columns=True)
-        self.add_columns("", "")
-        self.add_rows(table_rows)
+        self._render_rows(table_rows)
 
         # Scroll to keep highlighted row visible
         if highlight_row is not None:
@@ -259,8 +247,6 @@ class InfoSidebar(DataTable):
             except Exception:
                 pass
 
-        self.refresh()
-
     def hide_search_results(self):
         """Clear search results and restore previous panel mode."""
         self._search_results = []
@@ -268,170 +254,125 @@ class InfoSidebar(DataTable):
         self.mode_index = self._pre_search_mode_index
         self.update_data()
 
+    def _render_rows(self, rows):
+        self.clear(columns=True)
+        self.add_columns("", "")
+        self.add_rows(rows)
+        self.refresh()
+
+    def _truncate(self, text, width):
+        max_text_width = max(width - 6, 10)
+        if len(text) > max_text_width:
+            return text[: max_text_width - 1] + "…"
+        return text
+
+    def _build_bookmark_rows(self, width):
+        rows = [
+            ["", Text.from_markup("[b]Copied Stack[/b]")],
+            ["", ""],
+        ]
+        copied_nodes = self.app.note_tree.copied_nodes
+        if copied_nodes:
+            hl1 = self.app.theme_variables.get("HL1", "white")
+            for i, node in enumerate(copied_nodes[::-1]):
+                text = self._truncate(node.text, width)
+                slot = self.app.note_tree.get_bookmark_slot(node)
+                if slot is not None:
+                    base = " vl" if i == 0 else ""
+                    marker_inner = f"[b]{slot}[/b]{base}"
+                else:
+                    marker_inner = "vl" if i == 0 else "•"
+                rows.append(
+                    [
+                        Text.from_markup(f"[dim][{hl1}]{marker_inner}[/{hl1}][/dim]"),
+                        Text.from_markup(text),
+                    ]
+                )
+            rows.extend(
+                [
+                    ["", Text.from_markup("[dim]\\[c]opy \\[v]paste \\[l]ink[/dim]")],
+                    ["", Text.from_markup("[dim]\\[C]ycle \\[V]isit \\[#]jump[/dim]")],
+                    ["", Text.from_markup("[dim]\\[S-#]bookmark[/dim]")],
+                ]
+            )
+
+        archived_roots = self._collect_archived_roots()
+        if archived_roots:
+            rows.extend(
+                [
+                    ["", ""],
+                    ["", Text.from_markup("[b]Archived[/b]")],
+                    ["", ""],
+                ]
+            )
+            for node in archived_roots:
+                text = self._truncate(node.text.replace("#ARCHIVE", "").strip(), width)
+                rows.append(["", Text.from_markup(f"[dim]{text}[/dim]")])
+        return rows
+
+    def _build_perpetual_journal_rows(self, width):
+        from datetime import date as _date
+
+        before, after = 7, 14
+        node_matches = self.app.note_tree.get_journal_entries_in_day_radius(
+            before, after
+        )
+        today_md = _date.today().strftime("%m-%d")
+        hl1 = self.app.theme_variables.get("HL1", "white")
+        strip_re = r"\[\d{4}-\d{2}-\d{2}.*?\]\s*"
+        today_marker = [
+            Text.from_markup(f"[{hl1}]{today_md}[/{hl1}]"),
+            Text.from_markup("Today"),
+        ]
+
+        rows = [
+            ["", Text.from_markup(f"[b]-{before} / +{after} days[/b]")],
+            ["", ""],
+            ["Date", "Entry"],
+        ]
+        today_inserted = any(match_str[5:] == today_md for _, match_str in node_matches)
+        today_row_added = False
+        for node, match_str in node_matches:
+            entry_md = match_str[5:]  # MM-DD from YYYY-MM-DD
+            if not today_inserted and not today_row_added and entry_md > today_md:
+                rows.append(today_marker)
+                today_row_added = True
+            text = node.text if node else ""
+            text = re.sub(strip_re, "", text).strip()
+            lines = textwrap.wrap(text, width - 16)
+            is_today = entry_md == today_md
+            for i_l, line in enumerate(lines):
+                if is_today:
+                    date_cell = (
+                        Text.from_markup(f"[{hl1}]{match_str}[/{hl1}]")
+                        if i_l == 0
+                        else ""
+                    )
+                    rows.append([date_cell, Text.from_markup(f"{line}")])
+                else:
+                    rows.append([match_str if i_l == 0 else "", line])
+        if not today_inserted and not today_row_added:
+            rows.append(today_marker)
+        return rows
+
+    _ROW_BUILDERS = {
+        "bookmarks": _build_bookmark_rows,
+        "perpetual_journal": _build_perpetual_journal_rows,
+    }
+
     def update_data(self):
         self._search_results = []
-
         mode = self.mode_options[self.mode_index]
-        logging.info(f"update_data: mode = {mode}")
         if mode is None:
-            logging.info("update_data: hiding widget")
             self.clear(columns=True)
             self.display = False
             self.refresh()
             return
-
-        logging.info(f"update_data: showing widget, display = True")
-
         self.display = True
-
+        self.show_header = False
         width = min(self.app.size.width // 2, 60)
-        # logging.info(f"Updating info widget with size: {self.size}")
-
-        table_rows = self._clock_rows()
-
-        if mode == "bookmarks":
-            logging.info("update_data: building bookmarks table")
-            self.show_header = False
-
-            table_rows.extend(
-                [
-                    ["", Text.from_markup("[b]Copied Stack[/b]")],
-                    ["", ""],
-                ]
-            )
-
-            copied_nodes = self.app.note_tree.copied_nodes
-            if copied_nodes:
-                max_text_width = max(width - 6, 10)
-                hl1 = self.app.theme_variables.get("HL1", "white")
-                for i, node in enumerate(copied_nodes[::-1]):
-                    text = node.text
-                    if len(text) > max_text_width:
-                        text = text[: max_text_width - 1] + "…"
-                    slot = self.app.note_tree.get_bookmark_slot(node)
-                    if slot is not None:
-                        base = " vl" if i == 0 else ""
-                        marker_inner = f"[b]{slot}[/b]{base}"
-                    else:
-                        marker_inner = "vl" if i == 0 else "•"
-                    table_rows.append(
-                        [
-                            Text.from_markup(
-                                f"[dim][{hl1}]{marker_inner}[/{hl1}][/dim]"
-                            ),
-                            Text.from_markup(text),
-                        ]
-                    )
-                table_rows.extend(
-                    [
-                        [
-                            "",
-                            Text.from_markup("[dim]\\[c]opy \\[v]paste \\[l]ink[/dim]"),
-                        ],
-                        [
-                            "",
-                            Text.from_markup(
-                                "[dim]\\[C]ycle \\[V]isit \\[#]jump[/dim]"
-                            ),
-                        ],
-                        [
-                            "",
-                            Text.from_markup("[dim]\\[S-#]bookmark[/dim]"),
-                        ],
-                    ]
-                )
-
-            archived_roots = self._collect_archived_roots()
-            if archived_roots:
-                table_rows.extend(
-                    [
-                        ["", ""],
-                        ["", Text.from_markup("[b]Archived[/b]")],
-                        ["", ""],
-                    ]
-                )
-                max_text_width = max(width - 6, 10)
-                for node in archived_roots:
-                    text = node.text.replace("#ARCHIVE", "").strip()
-                    if len(text) > max_text_width:
-                        text = text[: max_text_width - 1] + "…"
-                    table_rows.append(["", Text.from_markup(f"[dim]{text}[/dim]")])
-
-            self.clear(columns=True)
-            self.add_columns("", "")
-            self.add_rows(table_rows)
-            logging.info(
-                f"update_data: bookmarks table built with {len(table_rows)} rows, calling refresh()"
-            )
-            self.refresh()
-
-        elif mode == "perpetual_journal":
-            logging.info("update_data: building perpetual_journal table")
-            self.show_header = False
-
-            before = self.app.config.perpetual_journal_radius_before
-            after = self.app.config.perpetual_journal_radius_after
-            node_matches = self.app.note_tree.get_journal_entries_in_day_radius(
-                before, after
-            )
-            logging.info(
-                f"perpetual_journal: -{before}/+{after} days, found {len(node_matches)} entries"
-            )
-
-            from datetime import date as _date
-
-            today_md = _date.today().strftime("%m-%d")
-            hl1 = self.app.theme_variables.get("HL1", "white")
-            strip_re = r"\[\d{4}-\d{2}-\d{2}.*?\]\s*"
-            table_rows.extend(
-                [
-                    ["", Text.from_markup(f"[b]-{before} / +{after} days[/b]")],
-                    ["", ""],
-                    ["Date", "Entry"],
-                ]
-            )
-            today_inserted = any(
-                match_str[5:] == today_md for _, match_str in node_matches
-            )
-            today_row_added = False
-            for node, match_str in node_matches:
-                entry_md = match_str[5:]  # MM-DD from YYYY-MM-DD
-                # Insert "Today" placeholder before the first entry past today's MM-DD
-                if not today_inserted and not today_row_added and entry_md > today_md:
-                    table_rows.append(
-                        [
-                            Text.from_markup(f"[{hl1}]{today_md}[/{hl1}]"),
-                            Text.from_markup("Today"),
-                        ]
-                    )
-                    today_row_added = True
-                text = node.text if node else ""
-                text = re.sub(strip_re, "", text).strip()
-                lines = textwrap.wrap(text, width - 16)
-                is_today = entry_md == today_md
-                for i_l, line in enumerate(lines):
-                    if is_today:
-                        date_cell = (
-                            Text.from_markup(f"[{hl1}]{match_str}[/{hl1}]")
-                            if i_l == 0
-                            else ""
-                        )
-                        table_rows.append([date_cell, Text.from_markup(f"{line}")])
-                    else:
-                        table_rows.append([match_str if i_l == 0 else "", line])
-            # If today falls after all entries (or list is empty), append the placeholder
-            if not today_inserted and not today_row_added:
-                table_rows.append(
-                    [
-                        Text.from_markup(f"[{hl1}]{today_md}[/{hl1}]"),
-                        Text.from_markup("Today"),
-                    ]
-                )
-
-            self.clear(columns=True)
-            self.add_columns("", "")
-            self.add_rows(table_rows)
-            logging.info(
-                f"update_data: perpetual_journal table built with {len(table_rows)} rows, calling refresh()"
-            )
-            self.refresh()
+        rows = self._clock_rows()
+        builder = self._ROW_BUILDERS.get(mode)
+        if builder is not None:
+            rows.extend(builder(self, width))
+        self._render_rows(rows)

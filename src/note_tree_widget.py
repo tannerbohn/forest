@@ -130,6 +130,7 @@ class NoteTreeWidget(Tree):
             return
 
         _node = widget_node._node
+        tvars = self.app.get_theme_variable_defaults()
 
         # arrow color/style
         arrow_str = ""
@@ -140,39 +141,22 @@ class NoteTreeWidget(Tree):
 
             # Determine arrow character
             if _node.is_collapsed:
-                if is_cursor:
-                    arrow_char = "⟫"  # "≡"
-                else:
-                    arrow_char = "⟫"  # "»" #"≡"
+                arrow_char = "⟫"
+            elif is_cursor:
+                arrow_char = "❯"
             else:
-                if is_cursor:
-                    arrow_char = "❯"  # "►" #"•" #"●"
-                else:
-                    arrow_char = "›"  # "🞌"
+                arrow_char = "›"
 
-            # Determine arrow color
-            if is_cursor:
-                tag = (
-                    self.app.get_theme_variable_defaults().get("cursor-arrow")
-                    or "white"
-                )
-            else:
-                tag = (
-                    self.app.get_theme_variable_defaults().get("default-arrow")
-                    or "white"
-                )
+            tag = tvars.get("cursor-arrow" if is_cursor else "default-arrow") or "white"
 
             if _node.is_collapsed:
                 arrow_str = f"[bold {tag}]{arrow_char}[/bold {tag}]"
             else:
                 arrow_str = f"[{tag}]{arrow_char}[/{tag}]"
 
-        # if _node.is_collapsed:
-        #     text = text.replace("  ≣", "  [white]≣[/white]") #"[•••]", "[white][•••][/white]")
-
         # completion coloring (we need to place this BEFORE the highlighting logic for it to be override the highlights)
         if _node.is_done():
-            tag = self.app.get_theme_variable_defaults().get("dim-text") or "dim"
+            tag = tvars.get("dim-text") or "dim"
             text = f"[{tag}]{text}[/{tag}]"
         else:
 
@@ -186,13 +170,8 @@ class NoteTreeWidget(Tree):
             # highlighting (not visible if a note is #DONE)
             if _node.is_highlighted():
                 hashtag = _node.get_highlight_hashtag()
-                hl = None
-                if "HL1" == hashtag:
-                    hl = self.app.get_theme_variable_defaults().get("HL1") or "green"
-                elif "HL2" == hashtag:
-                    hl = self.app.get_theme_variable_defaults().get("HL2") or "yellow"
-                elif "HL3" == hashtag:
-                    hl = self.app.get_theme_variable_defaults().get("HL3") or "red"
+                hl_fallback = {"HL1": "green", "HL2": "yellow", "HL3": "red"}
+                hl = tvars.get(hashtag) or hl_fallback.get(hashtag)
                 if hl:
                     text = f"[{hl}]{text}[/{hl}]"
 
@@ -310,13 +289,13 @@ class NoteTreeWidget(Tree):
     def render(self, target_widget=None) -> None:
         """Load tab-indented data and populate the tree."""
 
-        # TODO: move this somewhere else to be more efficient?
-        if "age-color-0" in self.app.get_theme_variable_defaults():
-            age_0 = self.app.get_theme_variable_defaults().get("age-color-0")
-            age_1 = self.app.get_theme_variable_defaults().get("age-color-1")
-            age_2 = self.app.get_theme_variable_defaults().get("age-color-2")
-
-            self.age_gradient = Gradient((0, age_0), (0.5, age_1), (1, age_2))
+        tvars = self.app.get_theme_variable_defaults()
+        if "age-color-0" in tvars:
+            self.age_gradient = Gradient(
+                (0, tvars["age-color-0"]),
+                (0.5, tvars["age-color-1"]),
+                (1, tvars["age-color-2"]),
+            )
 
         if target_widget is None:
             self.root.remove_children()  # Clear the tree before reloading
@@ -391,6 +370,13 @@ class NoteTreeWidget(Tree):
                 self.move_cursor(candidate)
                 return
 
+    def _render_around_cursor(self) -> None:
+        parent_widget = self.cursor_node.parent
+        if parent_widget is None or parent_widget.parent is None:
+            self.render()
+        else:
+            self.render(target_widget=parent_widget)
+
     def action_indent(self):
         if not self.cursor_node:
             return
@@ -399,11 +385,7 @@ class NoteTreeWidget(Tree):
 
         self.note_tree.push_undo(_node.parent)
         self.note_tree.indent(self.cursor_node._node)
-        parent_widget = self.cursor_node.parent
-        if parent_widget is None or parent_widget.parent is None:
-            self.render()
-        else:
-            self.render(target_widget=parent_widget)
+        self._render_around_cursor()
 
         self._fix_cursor_position(_node)
 
@@ -429,8 +411,8 @@ class NoteTreeWidget(Tree):
             return
 
         node_obj = self.cursor_node._node
-        if node_obj in self.app.copied_list.nodes:
-            self.app.copied_list.nodes.remove(node_obj)
+        if node_obj in self.note_tree.copied_nodes:
+            self.note_tree.copied_nodes.remove(node_obj)
             self.note_tree.remove_bookmark_for(node_obj)
             if self.app.info_sidebar.display:
                 self.app.info_sidebar.update_data()
@@ -438,11 +420,7 @@ class NoteTreeWidget(Tree):
         self.note_tree.push_undo(self.cursor_node._node.parent)
         self.note_tree.delete_focus_node(self.cursor_node._node)
 
-        parent_widget = self.cursor_node.parent
-        if parent_widget is None or parent_widget.parent is None:
-            self.render()
-        else:
-            self.render(target_widget=parent_widget)
+        self._render_around_cursor()
 
     def action_toggle_node(self):
 
@@ -478,11 +456,7 @@ class NoteTreeWidget(Tree):
             _node = self.cursor_node._node
             self.note_tree.push_undo(_node.parent)
             self.note_tree.move_line(_node, direction=direction)
-            parent_widget = self.cursor_node.parent
-            if parent_widget is None or parent_widget.parent is None:
-                self.render()
-            else:
-                self.render(target_widget=parent_widget)
+            self._render_around_cursor()
             self._fix_cursor_position(_node)
 
     def action_toggle_copy(self):
@@ -491,19 +465,19 @@ class NoteTreeWidget(Tree):
         node = self.cursor_node._node
         if not node.parent:
             return
-        self.app.copied_list.toggle(node)
+        self.app.copied_toggle(node)
         self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
 
     def action_jump_to_copy(self):
-        self.app.copied_list.jump_to_next()
+        self.app.copied_jump_to_next()
 
     def action_cycle_copy(self):
-        self.app.copied_list.cycle_target()
+        self.app.copied_cycle_target()
 
     def action_paste_node(self):
-        if not self.app.copied_list.nodes or not self.cursor_node:
+        if not self.note_tree.copied_nodes or not self.cursor_node:
             return
-        source = self.app.copied_list.nodes[-1]
+        source = self.note_tree.copied_nodes[-1]
         destination = self.cursor_node._node
         if destination == source:
             return
@@ -519,7 +493,7 @@ class NoteTreeWidget(Tree):
         destination.paste_node_here(source, as_sibling=as_sibling)
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
-        self.app.copied_list.nodes.pop()
+        self.note_tree.copied_nodes.pop()
         self.note_tree.remove_bookmark_for(source)
         if self.app.info_sidebar.display:
             self.app.info_sidebar.update_data()
@@ -527,9 +501,9 @@ class NoteTreeWidget(Tree):
         self._fix_cursor_position(source)
 
     def action_paste_link(self):
-        if not self.app.copied_list.nodes or not self.cursor_node:
+        if not self.note_tree.copied_nodes or not self.cursor_node:
             return
-        source = self.app.copied_list.nodes[-1]
+        source = self.note_tree.copied_nodes[-1]
         destination = self.cursor_node._node
         if destination == source:
             return
@@ -552,7 +526,7 @@ class NoteTreeWidget(Tree):
             new_node = destination.add_child(link_text, top=True)
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
-        popped = self.app.copied_list.nodes.pop()
+        popped = self.note_tree.copied_nodes.pop()
         self.note_tree.remove_bookmark_for(popped)
         if self.app.info_sidebar.display:
             self.app.info_sidebar.update_data()
@@ -887,7 +861,7 @@ class NoteTreeWidget(Tree):
             age_segment = Segment(age_char)
             if line.path[-1]._node:
                 _n = line.path[-1]._node
-                is_copied = _n in self.app.copied_list.nodes
+                is_copied = _n in self.note_tree.copied_nodes
                 is_bookmarked = self.note_tree.determine_if_bookmarked(_n)
                 if line.path[-1].label.plain.strip():
                     if is_bookmarked:

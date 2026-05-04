@@ -14,10 +14,11 @@ from textual.geometry import Size
 from textual.strip import Strip
 from textual.widgets import Tree
 
+from clipboard import copy_to_clipboard
 from note_tree import NoteTree
 from subtrees import SUBTREES
 from themes import TEXT_COLOR_REGEX_LIST
-from utils import add_subtree, extract_path_references
+from utils import add_subtree, extract_path_references, node_subtree_as_text
 
 logging = None
 
@@ -65,6 +66,8 @@ class NoteTreeWidget(Tree):
         Binding("v", "paste_node()", "Paste", show=False),
         Binding("V", "jump_to_copy()", "Move to next copied note", show=False),
         Binding("l", "paste_link()", "Paste link to copied note", show=False),
+        Binding("y", "yank_node()", "Yank to clipboard", show=False),
+        Binding("Y", "yank_subtree()", "Yank subtree to clipboard", show=False),
     ]
 
     def __init__(self, note_tree: NoteTree, id: str):
@@ -470,6 +473,32 @@ class NoteTreeWidget(Tree):
 
     def action_jump_to_copy(self):
         self.app.copied_jump_to_next()
+
+    def action_yank_node(self):
+        if not self.cursor_node or not hasattr(self.cursor_node, "_node"):
+            return
+        node = self.cursor_node._node
+        if not node:
+            return
+        if copy_to_clipboard(node.text):
+            self.app.notify("Yanked note to clipboard")
+        else:
+            self.app.notify("Failed to copy to clipboard")
+
+    def action_yank_subtree(self):
+        if not self.cursor_node or not hasattr(self.cursor_node, "_node"):
+            return
+        node = self.cursor_node._node
+        if not node:
+            return
+        text = node_subtree_as_text(node)
+        if copy_to_clipboard(text):
+            n = text.count("\n") + 1
+            self.app.notify(
+                f"Yanked subtree ({n} line{'s' if n != 1 else ''}) to clipboard"
+            )
+        else:
+            self.app.notify("Failed to copy to clipboard")
 
     def action_cycle_copy(self):
         self.app.copied_cycle_target()

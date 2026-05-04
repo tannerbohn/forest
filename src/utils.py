@@ -80,6 +80,19 @@ def add_subtree(node, tree):
             add_subtree(child, v)
 
 
+def node_subtree_as_text(node) -> str:
+    base_depth = node.depth
+    lines = []
+
+    def walk(n):
+        lines.append("\t" * (n.depth - base_depth) + "- " + n.text)
+        for child in n.children:
+            walk(child)
+
+    walk(node)
+    return "\n".join(lines)
+
+
 def trigram_similarity(w_a, w_b, coverage_weight=0.5):
     if not w_b:
         return 0

@@ -6,6 +6,8 @@ import re
 import textwrap
 from datetime import datetime
 
+os.environ["COLORTERM"] = "truecolor"
+
 from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult

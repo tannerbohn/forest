@@ -132,6 +132,8 @@ class InfoSidebar(DataTable):
                 ["v", "Paste top of copied list after cursor"],
                 ["V", "Move to next copied note (rotates list)"],
                 ["l", "Paste [[path]] link to top of copied list"],
+                ["y", "Yank note text to system clipboard"],
+                ["Y", "Yank note + subtree to system clipboard"],
                 ["z/Z", "Undo/redo"],
                 ["", ""],
                 ["", Text.from_markup("[b]Commands[/b]")],

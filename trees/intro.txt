@@ -23,6 +23,8 @@
 		- secondary #HL2 @{2026-02-16}
 		- tertiary #HL3 @{2026-02-16}
 	- z to undo, Z to redo #HL3 @{2026-02-16}
+	- y yanks (copies) the note text to the system clipboard @{2026-05-04}
+	- Y yanks the note and all its descendants to the system clipboard (useful when terminal text-selection is awkward) @{2026-05-04}
 	- Typing { NOW } (without the spaces) in a note will be replaced with the current timestamp @{2026-02-16}
 - Saving @{2026-02-16}
 	- Press s to save. If you have unsaved changes, "Modified" will appear in the top bar @{2026-02-16}

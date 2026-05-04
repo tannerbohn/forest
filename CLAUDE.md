@@ -177,6 +177,7 @@ src/
   subtrees.py         - Predefined note templates
   themes.py           - Color theme definitions
   copied_list.py      - CopiedList helper (copy/paste/cycle logic; renders in sidebar)
+  clipboard.py        - OSC 52 system-clipboard write helper
   widgets/
     status_bar.py     - StatusBar (context path, save indicator, timer)
     info_sidebar.py   - InfoSidebar (bookmarks, copied, archived, journal, search, help)
@@ -211,6 +212,8 @@ config.json.example   - Example configuration file (template)
 - `d`: Move note down
 - `c`: Cut node
 - `v`: Paste node
+- `y`: Yank cursor note text to system clipboard (OSC 52)
+- `Y`: Yank cursor note + descendants to system clipboard (OSC 52)
 - `enter`: Add new note
 - `0-9`: Jump to bookmark
 - `z`: Undo

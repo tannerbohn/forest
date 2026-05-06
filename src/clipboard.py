@@ -8,8 +8,20 @@ import sys
 OSC52_LIMIT_BYTES = 74000
 
 
+def _is_wsl() -> bool:
+    if os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"):
+        return True
+    try:
+        with open("/proc/version", "r") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
 def _try_clipboard_tool(text: str) -> bool:
     candidates = []
+    if _is_wsl():
+        candidates.append(["clip.exe"])
     if os.environ.get("WAYLAND_DISPLAY"):
         candidates.append(["wl-copy"])
     if os.environ.get("DISPLAY"):
@@ -21,9 +33,11 @@ def _try_clipboard_tool(text: str) -> bool:
         if not shutil.which(argv[0]):
             continue
         try:
-            proc = subprocess.run(
-                argv, input=text.encode("utf-8"), check=True, timeout=2
-            )
+            if argv[0] == "clip.exe":
+                data = b"\xff\xfe" + text.encode("utf-16-le")
+            else:
+                data = text.encode("utf-8")
+            proc = subprocess.run(argv, input=data, check=True, timeout=2)
             if proc.returncode == 0:
                 return True
         except Exception as e:

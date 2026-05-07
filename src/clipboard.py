@@ -34,7 +34,7 @@ def _try_clipboard_tool(text: str) -> bool:
             continue
         try:
             if argv[0] == "clip.exe":
-                data = b"\xff\xfe" + text.encode("utf-16-le")
+                data = text.encode("utf-16-le")
             else:
                 data = text.encode("utf-8")
             proc = subprocess.run(argv, input=data, check=True, timeout=2)

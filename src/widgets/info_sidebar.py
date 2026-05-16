@@ -319,11 +319,12 @@ class InfoSidebar(DataTable):
         node_matches = self.app.note_tree.get_journal_entries_in_day_radius(
             before, after
         )
+        today_year = _date.today().strftime("%Y")
         today_md = _date.today().strftime("%m-%d")
         hl1 = self.app.theme_variables.get("HL1", "white")
         strip_re = r"\[\d{4}-\d{2}-\d{2}.*?\]\s*"
         today_marker = [
-            Text.from_markup(f"[{hl1}]{today_md}[/{hl1}]"),
+            Text.from_markup(f"[{hl1}]{today_year}-{today_md}[/{hl1}]"),
             Text.from_markup("Today"),
         ]
 

@@ -115,11 +115,29 @@ class NoteTreeWidget(Tree):
         w, h = self.virtual_size
         self.virtual_size = Size(w, h + padding)
 
+    def _link_multiline(self, widgets):
+        """Set _first/_last pointers on a group of physical widgets that
+        together render one logical node. widgets[0] bears the arrow;
+        widgets[-1] anchors the collapsed-size dots and bookmark/copy icons."""
+        first, last = widgets[0], widgets[-1]
+        for w in widgets:
+            w._first_widget_of_multiline = first
+            w._last_widget_of_multiline = last
+
+    def _first_widget(self, w):
+        return getattr(w, "_first_widget_of_multiline", w) or w
+
+    def _last_widget(self, w):
+        return getattr(w, "_last_widget_of_multiline", w) or w
+
+    def _is_first_widget(self, w):
+        return w is not None and self._first_widget(w) is w
+
     def get_first_widget_for_node(self, widget_node):
         """Get the first widget of a multiline node, or the widget itself if single-line."""
-        if widget_node and hasattr(widget_node, "_first_widget_of_multiline"):
-            return widget_node._first_widget_of_multiline
-        return widget_node
+        if widget_node is None:
+            return widget_node
+        return self._first_widget(widget_node)
 
     def set_styled_node_label(self, widget_node, is_cursor=False):
 
@@ -137,7 +155,7 @@ class NoteTreeWidget(Tree):
 
         # arrow color/style
         arrow_str = ""
-        if widget_node == widget_node._first_widget_of_multiline:
+        if self._is_first_widget(widget_node):
             text = text[1:]  # remove the existing arrow
 
             is_bookmarked = self.note_tree.determine_if_bookmarked(_node)
@@ -184,8 +202,7 @@ class NoteTreeWidget(Tree):
         if (
             _node.is_collapsed
             and _node.children
-            and widget_node
-            == getattr(widget_node, "_last_widget_of_multiline", widget_node)
+            and widget_node is self._last_widget(widget_node)
         ):
             descendants = (
                 len(
@@ -253,35 +270,24 @@ class NoteTreeWidget(Tree):
                 "> " + parts[0]
             )  # use a placeholder arrow here, will be replaced when we apply line formatting
 
-            if len(parts) > 1:
-                child_widget = tree_widget.add(parts[0])
-                child_widget._depth = depth + 1
-                child_widget._node = node
-                first_widget = child_widget
+            widgets = []
+            first_widget = tree_widget.add(parts[0])
+            first_widget._depth = depth + 1
+            first_widget._node = node
+            widgets.append(first_widget)
+            for p in parts[1:]:
+                w = tree_widget.add("  " + p)
+                w._depth = depth + 1
+                w._node = node
+                widgets.append(w)
+
+            self._link_multiline(widgets)
+            for w in widgets:
+                self.set_styled_node_label(w)
+            if len(widgets) > 1:
                 first_widget.expand()
 
-                for p in parts[1:]:
-                    child_widget = tree_widget.add("  " + p)
-                    child_widget._node = node
-                    child_widget._depth = depth + 1
-                    child_widget._first_widget_of_multiline = first_widget
-                    self.set_styled_node_label(child_widget)
-
-                first_widget._first_widget_of_multiline = first_widget
-                first_widget._last_widget_of_multiline = child_widget
-
-                self.set_styled_node_label(first_widget)
-
-                child_widget._last_widget_of_multiline = child_widget
-
-            else:
-                child_widget = tree_widget.add(parts[0])
-                child_widget._node = node
-                child_widget._depth = depth + 1
-                child_widget._first_widget_of_multiline = child_widget
-                child_widget._last_widget_of_multiline = child_widget
-
-                self.set_styled_node_label(child_widget)
+            child_widget = widgets[-1]
 
             if not node.is_collapsed:
                 self.build_tree(child_widget, node, depth=depth + 1)
@@ -366,10 +372,7 @@ class NoteTreeWidget(Tree):
             candidate = l.path[-1]
             if candidate._node != target_node:
                 continue
-            if (
-                hasattr(candidate, "_first_widget_of_multiline")
-                and candidate._first_widget_of_multiline == candidate
-            ):
+            if self._is_first_widget(candidate):
                 self.move_cursor(candidate)
                 return
 
@@ -624,8 +627,8 @@ class NoteTreeWidget(Tree):
         # if the parent is already in the current context.. just switch lines
         if self.cursor_node._node.parent in current_node_list:
             self.move_cursor(self.cursor_node.parent)
-            if self.cursor_node != self.cursor_node._first_widget_of_multiline:
-                self.move_cursor(self.cursor_node._first_widget_of_multiline)
+            if not self._is_first_widget(self.cursor_node):
+                self.move_cursor(self._first_widget(self.cursor_node))
         elif self.cursor_line != 0:
             self.move_cursor_to_line(0)
         else:
@@ -659,9 +662,8 @@ class NoteTreeWidget(Tree):
             elif self.cursor_line == self.last_line:
                 self.move_cursor_to_line(0)
 
-            if (
-                self.cursor_node.label.plain.strip()
-                and self.cursor_node._first_widget_of_multiline == self.cursor_node
+            if self.cursor_node.label.plain.strip() and self._is_first_widget(
+                self.cursor_node
             ):
                 break
 
@@ -679,9 +681,8 @@ class NoteTreeWidget(Tree):
             elif self.cursor_line == 0:
                 self.move_cursor_to_line(self.last_line)
 
-            if (
-                self.cursor_node.label.plain.strip()
-                and self.cursor_node._first_widget_of_multiline == self.cursor_node
+            if self.cursor_node.label.plain.strip() and self._is_first_widget(
+                self.cursor_node
             ):
                 break
 

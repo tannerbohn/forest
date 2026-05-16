@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import textwrap
+from dataclasses import dataclass
 from datetime import datetime
 
 os.environ["COLORTERM"] = "truecolor"
@@ -77,6 +78,25 @@ def setup_logging(tree_filepath):
     logging.info("Application started for %s", tree_filepath)
 
 
+@dataclass(frozen=True)
+class Command:
+    """A `:`-mode command. Matches when cmd_str equals one of `names`,
+    or (if takes_args) starts with `<name> `."""
+
+    names: tuple
+    handler_attr: str
+    takes_args: bool = False
+
+    def match(self, cmd_str: str):
+        """Return the matched name (str) if cmd_str matches, else None."""
+        for n in self.names:
+            if cmd_str == n:
+                return n
+            if self.takes_args and cmd_str.startswith(n + " "):
+                return n
+        return None
+
+
 class ForestApp(App):
     # CSS_PATH = "forest.tcss"
     CSS = """
@@ -114,6 +134,11 @@ class ForestApp(App):
         Binding(":", "command_mode()", "Command mode", show=True),
         Binding("grave_accent", "cycle_side_panel()", "Cycle side panel", show=True),
     ]
+
+    _MIN_TREE_WIDTH = 50
+    _DEFAULT_SIDEBAR_WIDTH = 40
+
+    _DOODLE_WIDTH = 30
 
     def __init__(self, file_path: str):
         super().__init__()
@@ -193,11 +218,6 @@ class ForestApp(App):
         i = self._doodle_next_id
         self._doodle_next_id += 1
         return i
-
-    _MIN_TREE_WIDTH = 50
-    _DEFAULT_SIDEBAR_WIDTH = 40
-
-    _DOODLE_WIDTH = 30
 
     def _apply_layout(self):
         side = self.config.margin_side
@@ -434,12 +454,14 @@ class ForestApp(App):
 
         self.push_screen(screen, callback=on_dismiss)
 
-    def _cmd_journal(self, cmd_str):
-        text = cmd_str[3:]
+    def _cmd_journal(self, cmd_str, args_str):
+        if not args_str:
+            self.notify("Usage: j+ <text>")
+            return
         self.note_tree.push_undo(self.note_tree.root)
-        self.note_tree_widget.add_journal_entry(text)
+        self.note_tree_widget.add_journal_entry(args_str)
 
-    def _cmd_search(self, cmd_str):
+    def _cmd_search(self, cmd_str, args_str):
         global_scope = cmd_str.startswith("?*") or cmd_str.startswith("??")
         query = cmd_str[2:].strip() if global_scope else cmd_str[1:].strip()
         query = query.replace(" › ", ">").replace(" > ", ">")
@@ -484,24 +506,25 @@ class ForestApp(App):
         self.info_sidebar.show_search_results(matching_nodes, display_query)
         self.update_search_view()
 
-    def _cmd_help(self, cmd_str):
+    def _cmd_help(self, cmd_str, args_str):
         self.info_sidebar.show_help()
 
-    def _cmd_doodle(self, cmd_str):
-        sub = cmd_str[len("doodle ") :].strip()
+    def _cmd_doodle(self, cmd_str, args_str):
+        sub = args_str.strip()
         if sub == "clear":
             self.doodle_pane.clear_current()
         elif sub == "show":
             self.doodle_pane.set_visible(True)
         elif sub == "hide":
             self.doodle_pane.set_visible(False)
+        else:
+            self.notify("Usage: doodle show|hide|clear")
 
-    def _cmd_run(self, cmd_str):
-        parts = cmd_str.split(maxsplit=1)
+    def _cmd_run(self, cmd_str, args_str):
         index = 0
-        if len(parts) > 1:
+        if args_str:
             try:
-                index = int(parts[1])
+                index = int(args_str)
             except ValueError:
                 self.notify("Usage: :run or :run <index>")
                 return
@@ -534,7 +557,7 @@ class ForestApp(App):
             line_node=target,
         )
 
-    def _cmd_collapse(self, cmd_str):
+    def _cmd_collapse(self, cmd_str, args_str):
         ctx = self.note_tree.context_node
         descendants = ctx.get_node_list(
             only_visible=False,
@@ -551,27 +574,27 @@ class ForestApp(App):
         self.note_tree.has_unsaved_operations = True
         self.note_tree_widget.render()
 
-    def _cmd_insert(self, cmd_str):
-        subtree_name = cmd_str.split(" ", 1)[-1]
-        self.note_tree_widget.add_subtree(subtree_name)
+    def _cmd_insert(self, cmd_str, args_str):
+        if not args_str:
+            self.notify("Usage: insert <subtree name>")
+            return
+        self.note_tree_widget.add_subtree(args_str)
 
-    def _cmd_random(self, cmd_str):
+    def _cmd_random(self, cmd_str, args_str):
         self.note_tree_widget.jump_to_random(global_scope=cmd_str == "random*")
 
-    def _cmd_timer_cancel(self, cmd_str):
+    def _cmd_timer_cancel(self, cmd_str, args_str):
         self.timer.cancel()
 
-    def _cmd_timer(self, cmd_str):
-        self.timer.start(cmd_str[6:].strip())
+    def _cmd_timer(self, cmd_str, args_str):
+        self.timer.start(args_str)
 
-    def _cmd_sticky(self, cmd_str):
+    def _cmd_sticky(self, cmd_str, args_str):
         global_scope = cmd_str.startswith("sn*")
-        if global_scope:
-            filter_arg = cmd_str[3:].strip()
-            scope_root = self.note_tree.root
-        else:
-            filter_arg = cmd_str[2:].strip()
-            scope_root = self.note_tree.context_node
+        filter_arg = args_str
+        scope_root = (
+            self.note_tree.root if global_scope else self.note_tree.context_node
+        )
         all_nodes = scope_root.get_node_list(
             only_visible=False,
             hide_done=True,
@@ -611,7 +634,7 @@ class ForestApp(App):
         }
         self._open_sticky_screen(matched, title, hl_colors)
 
-    def _cmd_snr(self, cmd_str):
+    def _cmd_snr(self, cmd_str, args_str):
         state = self._sticky_note_state
         if not state:
             self.notify("No sticky note board to recover.")
@@ -641,9 +664,8 @@ class ForestApp(App):
             refresh_state_nodes_on_dismiss=True,
         )
 
-    def _cmd_archive(self, cmd_str):
-        parts = cmd_str.split(None, 1)
-        sub = parts[1].strip() if len(parts) > 1 else ""
+    def _cmd_archive(self, cmd_str, args_str):
+        sub = args_str.strip()
         if sub == "set":
             node = self.note_tree_widget.cursor_node._node
             if self._toggle_archive_tag(node, add=True) and self.note_tree.hide_archive:
@@ -671,29 +693,33 @@ class ForestApp(App):
             return
         self.info_sidebar.update_data()
 
+    # Order matters: more specific prefixes before shorter ones (e.g. "timer cancel" before "timer").
+    COMMANDS = (
+        Command(("help",), "_cmd_help"),
+        Command(("j+",), "_cmd_journal", takes_args=True),
+        Command(("doodle",), "_cmd_doodle", takes_args=True),
+        Command(("run",), "_cmd_run", takes_args=True),
+        Command(("collapse",), "_cmd_collapse"),
+        Command(("insert",), "_cmd_insert", takes_args=True),
+        Command(("random", "random*"), "_cmd_random"),
+        Command(("timer cancel",), "_cmd_timer_cancel"),
+        Command(("timer",), "_cmd_timer", takes_args=True),
+        Command(("sn", "sn*"), "_cmd_sticky", takes_args=True),
+        Command(("snr",), "_cmd_snr"),
+        Command(("archive",), "_cmd_archive", takes_args=True),
+    )
+
     def _dispatch_command(self, cmd_str):
-        # Order matters: longer/more specific prefixes before shorter ones.
-        handlers = (
-            (lambda c: c.startswith("j+ "), self._cmd_journal),
-            (lambda c: c.startswith("?"), self._cmd_search),
-            (lambda c: c == "help", self._cmd_help),
-            (lambda c: c.startswith("doodle "), self._cmd_doodle),
-            (lambda c: c == "run" or c.startswith("run "), self._cmd_run),
-            (lambda c: c == "collapse", self._cmd_collapse),
-            (lambda c: c.startswith("insert "), self._cmd_insert),
-            (lambda c: c in ("random", "random*"), self._cmd_random),
-            (lambda c: c == "timer cancel", self._cmd_timer_cancel),
-            (lambda c: c.startswith("timer "), self._cmd_timer),
-            (
-                lambda c: c == "sn" or c.startswith("sn ") or c.startswith("sn*"),
-                self._cmd_sticky,
-            ),
-            (lambda c: c == "snr", self._cmd_snr),
-            (lambda c: c == "archive" or c.startswith("archive "), self._cmd_archive),
-        )
-        for matches, handler in handlers:
-            if matches(cmd_str):
-                handler(cmd_str)
+        # "?" is a marker prefix (no space before query) — it doesn't fit the
+        # word-command shape, so handle it up front.
+        if cmd_str.startswith("?"):
+            self._cmd_search(cmd_str, "")
+            return
+        for cmd in self.COMMANDS:
+            name = cmd.match(cmd_str)
+            if name is not None:
+                args_str = cmd_str[len(name) :].lstrip()
+                getattr(self, cmd.handler_attr)(cmd_str, args_str)
                 return
 
     def on_input_submitted(self, event):

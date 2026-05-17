@@ -694,7 +694,7 @@ class ForestApp(App):
         self.info_sidebar.update_data()
 
     # Order matters: more specific prefixes before shorter ones (e.g. "timer cancel" before "timer").
-    COMMANDS = (
+    _COMMAND_REGISTRY = (
         Command(("help",), "_cmd_help"),
         Command(("j+",), "_cmd_journal", takes_args=True),
         Command(("doodle",), "_cmd_doodle", takes_args=True),
@@ -715,7 +715,7 @@ class ForestApp(App):
         if cmd_str.startswith("?"):
             self._cmd_search(cmd_str, "")
             return
-        for cmd in self.COMMANDS:
+        for cmd in self._COMMAND_REGISTRY:
             name = cmd.match(cmd_str)
             if name is not None:
                 args_str = cmd_str[len(name) :].lstrip()

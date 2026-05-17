@@ -372,6 +372,9 @@ class NoteTreeWidget(Tree):
             candidate = l.path[-1]
             if candidate._node != target_node:
                 continue
+            # skip the empty spacer rows inserted between top-level children
+            if not candidate.label.plain.strip():
+                continue
             if self._is_first_widget(candidate):
                 self.move_cursor(candidate)
                 return

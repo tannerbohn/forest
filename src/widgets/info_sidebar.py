@@ -192,20 +192,6 @@ class InfoSidebar(DataTable):
 
         table_rows = self._clock_rows()
 
-        header = f"Search: {query}" if query else "Similar Notes"
-        table_rows.extend(
-            [
-                ["", Text.from_markup(f"[b]{header}[/b]")],
-                [
-                    "",
-                    Text.from_markup(
-                        f"[dim]{len(matches)} result{'s' if len(matches) != 1 else ''} - Use ↑/↓ to cycle[/dim]"
-                    ),
-                ],
-                ["", ""],
-            ]
-        )
-
         # Track which DataTable row index corresponds to the highlighted match
         highlight_row = None
 
@@ -226,26 +212,56 @@ class InfoSidebar(DataTable):
                 marker = Text.from_markup("[dim]›[/dim]")
             if is_current:
                 styled_text = Text.from_markup(f"[reverse]{node_text}[/reverse]")
-                highlight_row = len(table_rows)
             else:
                 styled_text = Text.from_markup(f"{node_text}")
-            table_rows.append([marker, styled_text])
 
-            # Row 2: ancestor path (first few parts, dim)
-            path_parts = match_node.get_path(include_self=False)[1:]  # skip root
+            # For local search, drop the path up through the context node so
+            # only the in-context ancestors show. For global, drop just root.
+            search = getattr(self.app, "_search", None)
+            if (
+                search
+                and getattr(search, "is_local", False)
+                and search.context_node is not None
+            ):
+                skip = search.context_node.depth + 1
+            else:
+                skip = 1
+            path_parts = match_node.get_path(include_self=False)[skip:]
             if path_parts:
                 path_preview = self._truncate(" › ".join(path_parts[:3]), width)
                 table_rows.append(["", Text.from_markup(f"[dim]{path_preview}[/dim]")])
 
+            if is_current:
+                highlight_row = len(table_rows)
+            table_rows.append([marker, styled_text])
+
+            table_rows.append(["", ""])
+
         if not matches:
             table_rows.append(["", "No results found"])
 
-        self._render_rows(table_rows)
+        # Compute desired scroll position before clearing/rebuilding so we
+        # can apply it in the same paint as the rebuild — avoids a flash at
+        # scroll_y=0 followed by a jump to the highlight.
+        target_scroll_y = None
+        if highlight_row is not None:
+            last_row = len(table_rows) - 1
+            trailing = min(highlight_row + 1, last_row)
+            header_offset = 1 if self.show_header else 0
+            viewport_h = max(1, self.size.height - header_offset)
+            cur_y = self.scroll_y
+            if trailing >= cur_y + viewport_h:
+                target_scroll_y = trailing - viewport_h + 1
+            elif highlight_row < cur_y:
+                target_scroll_y = highlight_row
+            else:
+                target_scroll_y = cur_y
 
-        # Scroll to keep highlighted row visible
+        self._render_rows(table_rows, scroll_y=target_scroll_y)
+
         if highlight_row is not None:
             try:
-                self.move_cursor(row=highlight_row)
+                self.move_cursor(row=highlight_row, animate=False, scroll=False)
             except Exception:
                 pass
 
@@ -256,10 +272,15 @@ class InfoSidebar(DataTable):
         self.mode_index = self._pre_search_mode_index
         self.update_data()
 
-    def _render_rows(self, rows):
+    def _render_rows(self, rows, scroll_y=None):
         self.clear(columns=True)
         self.add_columns("", "")
         self.add_rows(rows)
+        if scroll_y is not None:
+            try:
+                self.scroll_to(y=scroll_y, animate=False, force=True)
+            except Exception:
+                pass
         self.refresh()
 
     def _truncate(self, text, width):

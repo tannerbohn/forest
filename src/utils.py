@@ -25,6 +25,16 @@ _SOUNDS = {
 }
 
 
+def is_wsl() -> bool:
+    if os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"):
+        return True
+    try:
+        with open("/proc/version", "r") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
 def play_sound_effect(name):
     """Play a sound effect by name. Supported: 'intro', 'timer'."""
     if name not in _SOUNDS:

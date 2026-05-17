@@ -1,9 +1,8 @@
-import logging
-import subprocess
 import time
 
 from pytimeparse import parse
 
+from notifications import send_notification
 from utils import play_sound_effect
 
 
@@ -110,14 +109,7 @@ class Timer:
             self._app.notify("⏱ Timer complete!", timeout=10)
 
     def _send_notification(self, message: str, urgency: str = "critical"):
-        try:
-            subprocess.Popen(
-                ["notify-send", f"--urgency={urgency}", "--app-name=Forest", message],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            pass
+        send_notification("Forest", message, urgency=urgency)
 
     def _stop(self):
         """Clear all timer state and hide the status bar display."""

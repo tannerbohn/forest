@@ -108,7 +108,7 @@ class ForestApp(App):
         layer: overlay;
         offset: 0 1;
         background: $background;
-        border: $HL1 50%;
+        border: $HL1 75%;
     }
     ScrollView {
         scrollbar-size: 0 0;
@@ -735,6 +735,25 @@ class ForestApp(App):
                 self.note_tree.has_unsaved_operations = True
                 self.note_tree_widget.render()
                 self.note_tree_widget._fix_cursor_position(node)
+                if self.note_tree_widget._arm_pulse:
+                    is_question = new_text.rstrip().endswith("?")
+                    if is_question:
+                        self.note_tree_widget.start_pulse(
+                            node,
+                            period=0.6,
+                            initial=1.0,
+                            decay=0.75,
+                            count=3,
+                        )
+                    else:
+                        self.note_tree_widget.start_pulse(
+                            node,
+                            period=0.5,
+                            initial=0.5,
+                            decay=0.5,
+                            count=1,
+                        )
+            self.note_tree_widget._arm_pulse = False
             self._node_being_edited = None
         else:
             cmd_str = event.value.strip()

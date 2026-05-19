@@ -2,6 +2,7 @@ import math
 import random
 import re
 import textwrap
+from time import monotonic
 from typing import cast
 
 from rich.segment import Segment
@@ -9,7 +10,7 @@ from rich.style import Style
 from rich.text import Text
 from textual._segment_tools import line_pad
 from textual.binding import Binding
-from textual.color import Gradient
+from textual.color import Color, Gradient
 from textual.geometry import Size
 from textual.strip import Strip
 from textual.widgets import Tree
@@ -44,6 +45,8 @@ class NoteTreeWidget(Tree):
         scrollbar-gutter: stable;
     }
     """
+
+    PULSE_TICK = 1 / 30
 
     BINDINGS = [
         Binding("s", "save()", "Save", show=True),
@@ -90,8 +93,50 @@ class NoteTreeWidget(Tree):
 
         self.age_gradient = Gradient((0, "red"), (1, "black"))
 
+        # id(node) -> (start, period, initial, decay, count)
+        self._pulse_state: dict[int, tuple[float, float, float, float, int]] = {}
+        self._pulse_interval = None
+        self._arm_pulse = False
+
         global logging
         logging = self.app.logging
+
+    def start_pulse(
+        self,
+        node,
+        *,
+        period: float,
+        initial: float,
+        decay: float,
+        count: int,
+    ) -> None:
+        """Begin a decaying half-sine pulse on `node`'s line(s).
+
+        Each of `count` successive pulses lasts `period` seconds; pulse k has
+        peak amplitude `initial * decay**k` (0 = no tint, 1 = full HL1)."""
+        self._pulse_state[id(node)] = (monotonic(), period, initial, decay, count)
+        if self._pulse_interval is None:
+            self._pulse_interval = self.set_interval(self.PULSE_TICK, self._tick_pulse)
+
+    def _pulse_amplitude(self, state: tuple, now: float) -> float:
+        start, period, initial, decay, count = state
+        elapsed = now - start
+        if elapsed < 0 or elapsed >= period * count:
+            return 0.0
+        k, frac = divmod(elapsed, period)
+        return initial * (decay ** int(k)) * math.sin(math.pi * (frac / period))
+
+    def _tick_pulse(self) -> None:
+        now = monotonic()
+        for nid, state in list(self._pulse_state.items()):
+            start, period, _, _, count = state
+            if now - start >= period * count:
+                del self._pulse_state[nid]
+        if not self._pulse_state and self._pulse_interval is not None:
+            self._pulse_interval.stop()
+            self._pulse_interval = None
+        self._line_cache.clear()
+        self.refresh()
 
     def on_mount(self) -> None:
         """Called when the widget is added to the DOM."""
@@ -454,6 +499,7 @@ class NoteTreeWidget(Tree):
         # initiate editing of the node
         if _node:
             self._fix_cursor_position(_node)
+            self._arm_pulse = True
             self.app.action_edit_note()
 
     def action_move_node(self, direction: str):
@@ -782,6 +828,16 @@ class NoteTreeWidget(Tree):
 
         is_hover = self.hover_line >= 0 and any(node._hover for node in line.path)
 
+        _ln_node = line.path[-1]._node if hasattr(line.path[-1], "_node") else None
+        _pulse_state = self._pulse_state.get(id(_ln_node)) if _ln_node else None
+        _pulse_amp = (
+            self._pulse_amplitude(_pulse_state, monotonic())
+            if _pulse_state is not None
+            else 0.0
+        )
+        # Quantize amplitude into the cache key so frames are cached per step.
+        _pulse_bucket = int(_pulse_amp * 32) if _pulse_amp > 0 else None
+
         cache_key = (
             y,
             is_hover,
@@ -789,6 +845,7 @@ class NoteTreeWidget(Tree):
             self._updates,
             self._pseudo_class_state,
             tuple(node._updates for node in line.path),
+            _pulse_bucket,
         )
         if cache_key in self._line_cache:
             strip = self._line_cache[cache_key]
@@ -888,6 +945,14 @@ class NoteTreeWidget(Tree):
 
             label = self.render_label(line.path[-1], line_style, label_style).copy()
             label.stylize(Style(meta={"node": line.node._id}))
+
+            if _pulse_amp > 0:
+                tvars = self.app.theme_variables
+                fg = Color.parse(tvars.get("foreground", "#ffffff"))
+                hl1 = Color.parse(tvars.get("HL1", "green"))
+                blended = fg.blend(hl1, min(1.0, _pulse_amp)).hex
+                label.stylize(Style(color=blended), 0, len(label.plain))
+
             guides.append(label)
 
             age_char = "    "

@@ -24,8 +24,7 @@ from search_state import SearchState
 from sticky_notes import StickyNotesScreen, _parse_flashcard
 from themes import THEMES
 from timer import Timer
-from utils import (apply_input_substitutions, extract_path_references,
-                   play_sound_effect)
+from utils import apply_input_substitutions, extract_path_references, play_sound_effect
 from widgets.doodle_pane import DoodlePane
 from widgets.info_sidebar import InfoSidebar
 from widgets.status_bar import StatusBar
@@ -320,7 +319,7 @@ class ForestApp(App):
         if not node:
             return
 
-        label_text = str(node._node.text)
+        label_text = str(node.text)
         # Create an Input widget pre-filled with the current label
         self._node_being_edited = node
         # input_widget.id = f"input-{id(node)}"
@@ -471,7 +470,7 @@ class ForestApp(App):
             if not cursor_node:
                 self.notify("No note selected.")
                 return
-            results = self.note_tree.find_by_similarity(cursor_node._node)
+            results = self.note_tree.find_by_similarity(cursor_node)
             results = [r for r in results if r[1] >= 0.10]
             if not global_scope:
                 results = [r for r in results if r[3]]
@@ -495,10 +494,7 @@ class ForestApp(App):
         self._search.is_local = not global_scope
         self._search.matches = matching_nodes
         self.status_bar.search_mode = True
-        try:
-            cursor_node_obj = self.note_tree_widget.cursor_node._node
-        except AttributeError:
-            cursor_node_obj = None
+        cursor_node_obj = self.note_tree_widget.cursor_node
         self._search.pre_search_position = (
             self.note_tree.context_node,
             cursor_node_obj,
@@ -531,7 +527,7 @@ class ForestApp(App):
         if not self.note_tree_widget.cursor_node:
             self.notify("No note selected")
             return
-        node = self.note_tree_widget.cursor_node._node
+        node = self.note_tree_widget.cursor_node
         if node.text.startswith("!"):
             try:
                 logging.info("Running command")
@@ -667,11 +663,11 @@ class ForestApp(App):
     def _cmd_archive(self, cmd_str, args_str):
         sub = args_str.strip()
         if sub == "set":
-            node = self.note_tree_widget.cursor_node._node
+            node = self.note_tree_widget.cursor_node
             if self._toggle_archive_tag(node, add=True) and self.note_tree.hide_archive:
                 self.note_tree_widget.move_cursor_to_line(0)
         elif sub == "unset":
-            self._toggle_archive_tag(self.note_tree_widget.cursor_node._node, add=False)
+            self._toggle_archive_tag(self.note_tree_widget.cursor_node, add=False)
         elif sub == "show":
             self.note_tree.hide_archive = False
             self.status_bar.hide_archive = False
@@ -680,8 +676,7 @@ class ForestApp(App):
         elif sub == "hide":
             self.note_tree.hide_archive = True
             self.status_bar.hide_archive = True
-            cursor = self.note_tree_widget.cursor_node
-            cursor_node = cursor._node if cursor else None
+            cursor_node = self.note_tree_widget.cursor_node
             self.note_tree.update_visible_node_list()
             self.note_tree_widget.render()
             if cursor_node and cursor_node.is_archived():
@@ -728,7 +723,7 @@ class ForestApp(App):
             new_text = event.value.strip()
             if new_text:
                 new_text = apply_input_substitutions(new_text)
-                node = self._node_being_edited._node
+                node = self._node_being_edited
                 self.note_tree.push_undo(node.parent)
                 node.text = new_text
                 node.post_text_update()

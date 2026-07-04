@@ -61,9 +61,9 @@ python3 src/forest.py trees/my_new_tree.txt
 - Maintains bookmarks (0-9 keys) and journal entries
 - Context management: The "context node" determines which branch is currently visible
 
-**NoteTreeWidget (note_tree_widget.py)**: Textual Tree widget for display
-- Renders NoteTree as an interactive TUI
-- Handles text wrapping for long notes
+**NoteTreeWidget (note_tree_widget.py)**: Virtualized display widget (Textual `ScrollView` + Line API)
+- Derives a flat list of `VisualRow`s (one per screen row, wrapping resolved up front) from `note_tree.visible_node_list`; paints only viewport rows via `render_line`
+- Per-node wrap results cached (`_wrap_cache`); styling-only actions (highlight/done/copy/bookmark) repaint in place via `_restyle_node` instead of rebuilding the row list
 - Custom line rendering with age indicators, bookmarks, and styling
 - Cursor navigation and view management
 
@@ -85,7 +85,7 @@ python3 src/forest.py trees/my_new_tree.txt
 
 1. **Startup**: Config loaded, then ForestApp (forest.py) loads a note file path
 2. **Loading**: NoteTree parses the text file (metadata is inline)
-3. **Rendering**: NoteTreeWidget builds Textual tree widgets from nodes
+3. **Rendering**: NoteTreeWidget derives a flat line-list from the visible nodes and paints viewport rows
 4. **Interaction**: User navigates/edits via keyboard bindings
 5. **Saving**: Modified tree is written back to text file with inline metadata
 
@@ -93,7 +93,7 @@ python3 src/forest.py trees/my_new_tree.txt
 
 **Context Node**: The currently focused branch of the tree. Zooming in/out changes the context node, affecting which notes are visible.
 
-**Multiline Rendering**: Long notes wrap across multiple lines. First line widget gets arrow, other lines are indented. Tracked via `_first_widget_of_multiline` and `_last_widget_of_multiline`.
+**Multiline Rendering**: Long notes wrap across multiple screen rows. Each wrap segment is its own `VisualRow` (`seg_index`/`seg_count`); the first segment bears the arrow, later segments are indented to align under the text.
 
 **Node State**: Persisted inline in each line's `@{...}` suffix:
 - Collapsed/expanded state (line prefix `+`/`-`)

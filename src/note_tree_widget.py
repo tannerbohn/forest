@@ -2,18 +2,17 @@ import math
 import random
 import re
 import textwrap
+from dataclasses import dataclass
 from time import monotonic
-from typing import cast
 
 from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
-from textual._segment_tools import line_pad
 from textual.binding import Binding
 from textual.color import Color, Gradient
 from textual.geometry import Size
+from textual.scroll_view import ScrollView
 from textual.strip import Strip
-from textual.widgets import Tree
 
 from clipboard import copy_to_clipboard
 from note_tree import NoteTree
@@ -22,6 +21,13 @@ from themes import TEXT_COLOR_REGEX_LIST
 from utils import add_subtree, extract_path_references, node_subtree_as_text
 
 logging = None
+
+# Horizontal layout of a rendered row:
+#   [age column: 4 cells] [indent: GUIDE_DEPTH * (depth+1)] [arrow+space] [text]
+# The age column carries the age-gradient bar plus the bookmark/copy glyph.
+GUIDE_DEPTH = 4
+# Cells reserved on the left of the text: age column (4) + arrow + space (2).
+_TEXT_LEFT_PAD = 4 + 2
 
 
 def _truncate_link_segment(text: str, max_chars: int = 30, max_words: int = 5) -> str:
@@ -38,7 +44,20 @@ def _truncate_link_segment(text: str, max_chars: int = 30, max_words: int = 5) -
     return truncated
 
 
-class NoteTreeWidget(Tree):
+@dataclass
+class VisualRow:
+    """One screen row. Wrapping is resolved here (one row per wrap segment),
+    so there is no paired first/last-widget machinery."""
+
+    node: object  # the logical Node this row belongs to
+    depth: int  # indentation depth relative to the context node (0 = direct child)
+    seg_index: int  # 0 = first (arrow-bearing) segment; >0 = wrap continuation
+    seg_count: int  # total wrap segments for this node
+    text: str  # the wrapped text slice for this row
+    is_spacer: bool = False  # blank spacer row inserted between top-level children
+
+
+class NoteTreeWidget(ScrollView):
 
     DEFAULT_CSS = """
     NoteTreeWidget {
@@ -46,11 +65,14 @@ class NoteTreeWidget(Tree):
     }
     """
 
+    can_focus = True
+
     PULSE_TICK = 1 / 30
 
     BINDINGS = [
+        Binding("up", "cursor_up()", "Up", show=False),
+        Binding("down", "cursor_down()", "Down", show=False),
         Binding("s", "save()", "Save", show=True),
-        # Binding("enter", "add_note()", "Add note", show=True),
         Binding("left", "zoom_out()", "Zoom out", show=True),
         Binding("right", "zoom_in()", "Zoom in", show=True),
         Binding("space", "toggle_node()", "Toggle", show=False),
@@ -74,32 +96,32 @@ class NoteTreeWidget(Tree):
     ]
 
     def __init__(self, note_tree: NoteTree, id: str):
-        super().__init__("Root", id=id)  # Initial placeholder
-        # self.parent_app = parent_app
+        super().__init__(id=id)
         self.note_tree = note_tree
 
-        # self.COMPONENT_CLASSES.remove('tree--cursor')
-
-        self._depth = 0  # 0: context node
-        self._node = None
-        self._first_widget_of_multiline = None
-        self._last_widget_of_multiline = None
-
-        # override the widget-wide icon nodes so that we can specify them individually
-        self.ICON_NODE_EXPANDED = ""
-        self.ICON_NODE = ""
-
-        self._last_cursor = None
+        # Flat render model (source of truth), rebuilt by _build_rows().
+        self.rows: list[VisualRow] = []
+        self.node_first_row: dict[int, int] = {}  # id(node) -> first row index
+        self.cursor_row = 0
 
         self.age_gradient = Gradient((0, "red"), (1, "black"))
+        self._line_cache: dict = {}
+        # id(node) -> (text, available_width, wrapped_parts); see _build_rows.
+        self._wrap_cache: dict[int, tuple[str, int, list[str]]] = {}
 
         # id(node) -> (start, period, initial, decay, count)
         self._pulse_state: dict[int, tuple[float, float, float, float, int]] = {}
         self._pulse_interval = None
         self._arm_pulse = False
 
+        # Defer the first build to on_resize: self.size.width isn't known yet,
+        # which would wrap against the full app width (ignoring our margin).
+        self._initial_render_done = False
+
         global logging
         logging = self.app.logging
+
+    # ------------------------------------------------------------------ pulse
 
     def start_pulse(
         self,
@@ -138,120 +160,225 @@ class NoteTreeWidget(Tree):
         self._line_cache.clear()
         self.refresh()
 
-    def on_mount(self) -> None:
-        """Called when the widget is added to the DOM."""
-        # self._is_mounted = False
+    # ------------------------------------------------------------- cursor api
 
-        self.center_scroll = False
-        self.show_guides = False
-        self.guide_depth = 4
-        self.show_root = False
-        self.auto_expand = False
+    @property
+    def cursor_node(self):
+        """The logical Node under the cursor (or None)."""
+        if 0 <= self.cursor_row < len(self.rows):
+            return self.rows[self.cursor_row].node
+        return None
 
-        # Defer the first render to on_resize: self.size.width isn't known
-        # yet here, which would cause build_tree to wrap against the full app
-        # width (ignoring our margin) and trigger a visible re-wrap once the
-        # widget is sized.
-        self._initial_render_done = False
+    def _is_navigable(self, index: int) -> bool:
+        if not (0 <= index < len(self.rows)):
+            return False
+        row = self.rows[index]
+        return not row.is_spacer and row.seg_index == 0
 
-    def _build(self) -> None:
-        super()._build()
-        padding = self.size.height // 2
-        w, h = self.virtual_size
-        self.virtual_size = Size(w, h + padding)
-
-    def _link_multiline(self, widgets):
-        """Set _first/_last pointers on a group of physical widgets that
-        together render one logical node. widgets[0] bears the arrow;
-        widgets[-1] anchors the collapsed-size dots and bookmark/copy icons."""
-        first, last = widgets[0], widgets[-1]
-        for w in widgets:
-            w._first_widget_of_multiline = first
-            w._last_widget_of_multiline = last
-
-    def _first_widget(self, w):
-        return getattr(w, "_first_widget_of_multiline", w) or w
-
-    def _last_widget(self, w):
-        return getattr(w, "_last_widget_of_multiline", w) or w
-
-    def _is_first_widget(self, w):
-        return w is not None and self._first_widget(w) is w
-
-    def get_first_widget_for_node(self, widget_node):
-        """Get the first widget of a multiline node, or the widget itself if single-line."""
-        if widget_node is None:
-            return widget_node
-        return self._first_widget(widget_node)
-
-    def set_styled_node_label(self, widget_node, is_cursor=False):
-
-        # since this could be part of a multiline, start from the plain label
-        text = widget_node.label.plain
-        # strip any previously-appended collapsed-size dots so they don't accumulate
-        text = re.sub(r" •+$", "", text)
-        if not text:
+    def _set_cursor(self, index: int) -> None:
+        if not self._is_navigable(index):
             return
-        if not hasattr(widget_node, "_node"):
-            return
+        old = self.cursor_row
+        self.cursor_row = index
+        # is_cursor is part of the line cache key: invalidate the two rows.
+        self._line_cache = {
+            k: v for k, v in self._line_cache.items() if k[0] not in (old, index)
+        }
+        self._update_progress()
+        self._scroll_cursor_into_margin()
+        self.refresh()
 
-        _node = widget_node._node
+    def _ensure_cursor_valid(self) -> None:
+        """After a rebuild, snap cursor to the nearest navigable row."""
+        n = len(self.rows)
+        if n == 0:
+            self.cursor_row = 0
+            return
+        start = self.cursor_row if 0 <= self.cursor_row < n else 0
+        for off in range(n):
+            j = (start + off) % n
+            if self._is_navigable(j):
+                self.cursor_row = j
+                return
+        self.cursor_row = 0
+
+    def move_cursor_to_line(self, line: int) -> None:
+        """Move the cursor to the first navigable row at or after `line`."""
+        n = len(self.rows)
+        if n == 0:
+            self.cursor_row = 0
+            return
+        for i in range(max(0, line), n):
+            if self._is_navigable(i):
+                self._set_cursor(i)
+                return
+        for i in range(n):
+            if self._is_navigable(i):
+                self._set_cursor(i)
+                return
+
+    def _fix_cursor_position(self, target_node) -> None:
+        if not target_node:
+            return
+        idx = self.node_first_row.get(id(target_node))
+        if idx is not None:
+            self._set_cursor(idx)
+
+    # ------------------------------------------------------------- build rows
+
+    def _build_rows(self) -> None:
+        self.rows = []
+        self.node_first_row = {}
+        ctx = self.note_tree.context_node
+        width = self.size.width or self.app.size.width
+
+        # Re-wrapping every visible node with textwrap dominates a full rebuild
+        # (~1.6s for 9k nodes). Only the changed node's wrap actually differs,
+        # so memoize parts per node keyed by (text, available width). Rebuilding
+        # a fresh dict each pass prunes it to exactly the current visible set, so
+        # it stays bounded regardless of tree size or edit churn.
+        old_wrap_cache = self._wrap_cache
+        new_wrap_cache: dict[int, tuple[str, int, list[str]]] = {}
+
+        seen_top_level = False
+        for node in self.note_tree.visible_node_list[1:]:  # [0] is the context node
+            depth = max(0, node.depth - ctx.depth - 1)
+
+            if depth == 0:
+                if seen_top_level:
+                    # blank spacer between top-level children (matches old layout)
+                    self.rows.append(VisualRow(node, 0, 0, 1, "", is_spacer=True))
+                seen_top_level = True
+
+            available = max(1, width - (GUIDE_DEPTH * depth + _TEXT_LEFT_PAD))
+            text = node.get_text()
+            cached = old_wrap_cache.get(id(node))
+            if cached is not None and cached[0] == text and cached[1] == available:
+                parts = cached[2]
+            else:
+                parts = textwrap.wrap(text, width=available) or [""]
+            new_wrap_cache[id(node)] = (text, available, parts)
+
+            seg_count = len(parts)
+            self.node_first_row[id(node)] = len(self.rows)
+            for i, part in enumerate(parts):
+                self.rows.append(VisualRow(node, depth, i, seg_count, part))
+
+        self._wrap_cache = new_wrap_cache
+
+    def render(self) -> None:
+        """Rebuild the flat render model from the note tree.
+
+        (Overrides ScrollView.render, which is unused because we paint via the
+        Line API in render_line.)"""
         tvars = self.app.get_theme_variable_defaults()
+        if "age-color-0" in tvars:
+            self.age_gradient = Gradient(
+                (0, tvars["age-color-0"]),
+                (0.5, tvars["age-color-1"]),
+                (1, tvars["age-color-2"]),
+            )
 
-        # arrow color/style
+        self.note_tree.update_visible_node_list()
+        self._build_rows()
+        self.virtual_size = Size(self.size.width, len(self.rows))
+        self._line_cache.clear()
+        self._ensure_cursor_valid()
+
+        self.app.status_bar.context_node = self.note_tree.context_node
+        doodle = getattr(self.app, "doodle_pane", None)
+        if doodle is not None:
+            doodle.set_context(self.note_tree.context_node)
+        self.app.status_bar.needs_saving = self.note_tree.has_unsaved_operations
+
+        self.refresh()
+
+    def _restyle_node(self, node) -> bool:
+        """Repaint after a styling-only change (highlight / done / copy /
+        bookmark) without rebuilding the whole row list.
+
+        Such changes don't restructure the tree, so the flat row list is
+        unchanged except for `node`'s own text (a hashtag toggle can shift its
+        wrap). We re-wrap just this node in place; if its line count changed we
+        return False so the caller falls back to a full render(). The line cache
+        is cleared wholesale (it only holds ~viewport entries) so dependent
+        rows repaint too — done-dimming of descendants, or a bookmark glyph
+        displaced by LRU replacement on another visible node."""
+        idx = self.node_first_row.get(id(node))
+        if idx is None or idx >= len(self.rows) or self.rows[idx].node is not node:
+            return False
+        row0 = self.rows[idx]
+        width = self.size.width or self.app.size.width
+        available = max(1, width - (GUIDE_DEPTH * row0.depth + _TEXT_LEFT_PAD))
+        text = node.get_text()
+        parts = textwrap.wrap(text, width=available) or [""]
+        if len(parts) != row0.seg_count:
+            return False
+        for i, part in enumerate(parts):
+            self.rows[idx + i] = VisualRow(node, row0.depth, i, len(parts), part)
+        self._wrap_cache[id(node)] = (text, available, parts)
+        self._line_cache.clear()
+        self.app.status_bar.needs_saving = self.note_tree.has_unsaved_operations
+        self.refresh()
+        return True
+
+    def update_location(self, context_node, line_node):
+        self.note_tree.update_context(context_node)
+        self.render()
+        self._fix_cursor_position(line_node)
+
+    # ------------------------------------------------------------- rendering
+
+    def _label_markup(self, row: VisualRow, is_cursor: bool) -> str:
+        """Build the console-markup string for a row's label (arrow + text)."""
+        if row.is_spacer:
+            return ""
+        node = row.node
+        tvars = self.app.get_theme_variable_defaults()
+        is_first = row.seg_index == 0
+        is_last = row.seg_index == row.seg_count - 1
+
         arrow_str = ""
-        if self._is_first_widget(widget_node):
-            text = text[1:]  # remove the existing arrow
-
-            is_bookmarked = self.note_tree.determine_if_bookmarked(_node)
-
-            # Determine arrow character
-            if _node.is_collapsed:
+        if is_first:
+            if node.is_collapsed:
                 arrow_char = "⟫"
             elif is_cursor:
                 arrow_char = "❯"
             else:
                 arrow_char = "›"
-
             tag = tvars.get("cursor-arrow" if is_cursor else "default-arrow") or "white"
-
-            if _node.is_collapsed:
+            if node.is_collapsed:
                 arrow_str = f"[bold {tag}]{arrow_char}[/bold {tag}]"
             else:
                 arrow_str = f"[{tag}]{arrow_char}[/{tag}]"
-
-        # completion coloring (we need to place this BEFORE the highlighting logic for it to be override the highlights)
-        if _node.is_done():
-            tag = tvars.get("dim-text") or "dim"
-            text = f"[{tag}]{text}[/{tag}]"
+            body = " " + row.text  # aligns text one cell past the arrow
         else:
+            body = "  " + row.text  # continuation lines align under the text
 
-            # regex-based coloring from theme (apply to plain text before wrapping)
+        # completion coloring first so it overrides highlights
+        if node.is_done():
+            tag = tvars.get("dim-text") or "dim"
+            body = f"[{tag}]{body}[/{tag}]"
+        else:
             for pattern, formatting in TEXT_COLOR_REGEX_LIST:
                 try:
-                    text = re.sub(pattern, f"[{formatting}]\\g<0>[/{formatting}]", text)
+                    body = re.sub(pattern, f"[{formatting}]\\g<0>[/{formatting}]", body)
                 except re.error as e:
                     logging.error(f"Invalid regex pattern '{pattern}': {e}")
-
-            # highlighting (not visible if a note is #DONE)
-            if _node.is_highlighted():
-                hashtag = _node.get_highlight_hashtag()
+            if node.is_highlighted():
+                hashtag = node.get_highlight_hashtag()
                 hl_fallback = {"HL1": "green", "HL2": "yellow", "HL3": "red"}
                 hl = tvars.get(hashtag) or hl_fallback.get(hashtag)
                 if hl:
-                    text = f"[{hl}]{text}[/{hl}]"
+                    body = f"[{hl}]{body}[/{hl}]"
 
-        if _node.depth == self.note_tree.context_node.depth + 1:
-            text = f"[bold]{text}[/bold]"
+        if node.depth == self.note_tree.context_node.depth + 1:
+            body = f"[bold]{body}[/bold]"
 
-        if (
-            _node.is_collapsed
-            and _node.children
-            and widget_node is self._last_widget(widget_node)
-        ):
+        if node.is_collapsed and node.children and is_last:
             descendants = (
                 len(
-                    _node.get_node_list(
+                    node.get_node_list(
                         only_visible=False,
                         hide_done=False,
                         hide_archive=self.note_tree.hide_archive,
@@ -261,275 +388,199 @@ class NoteTreeWidget(Tree):
             )
             if descendants > 0:
                 dot_count = min(4, max(1, int(2 * math.log10(descendants + 1))))
-                if _node.is_done():
-                    text += f" [dim]{'•' * dot_count}[/dim]"
+                if node.is_done():
+                    body += f" [dim]{'•' * dot_count}[/dim]"
                 else:
-                    text += f" {'•' * dot_count}"
+                    body += f" {'•' * dot_count}"
 
-        text = arrow_str + text
+        return arrow_str + body
+
+    def _age_segment(self, row: VisualRow) -> Segment:
+        node = row.node
+        tvars = self.app.get_theme_variable_defaults()
+        if row.text.strip():
+            if self.note_tree.determine_if_bookmarked(node):
+                age_char = "▎💠 "
+            elif node in self.note_tree.copied_nodes:
+                age_char = "▎🔹 "
+            else:
+                age_char = "▎   "
+        else:
+            age_char = "▎   "
+        age_days = node.get_days_old()
+        age_color = self.age_gradient.get_color(min(1, age_days / 365)).hex
+        age_bg = tvars.get("age-column-bg", "#1f170d")
+        return Segment(age_char, Style(color=age_color, bgcolor=age_bg))
+
+    def _build_strip(self, index: int, width: int) -> Strip:
+        row = self.rows[index]
+        is_cursor = index == self.cursor_row
+
+        line_text = Text(no_wrap=True, end="")
+        line_text.append(" " * (GUIDE_DEPTH * (row.depth + 0)))
 
         try:
-            widget_node.label = Text.from_markup(text)
+            label = Text.from_markup(self._label_markup(row, is_cursor))
         except Exception as e:
-            logging.error("Text.from_markup failed: {e}")
-            widget_node.label = Text.from_markup("ERROR")
+            logging.error(f"Text.from_markup failed: {e}")
+            label = Text("ERROR")
 
-    def build_tree(self, tree_widget, root_node, depth=0, target_widget=None):
+        pulse_state = self._pulse_state.get(id(row.node))
+        pulse_amp = (
+            self._pulse_amplitude(pulse_state, monotonic()) if pulse_state else 0.0
+        )
+        if pulse_amp > 0:
+            tvars = self.app.theme_variables
+            fg = Color.parse(tvars.get("foreground", "#ffffff"))
+            hl1 = Color.parse(tvars.get("HL1", "green"))
+            blended = fg.blend(hl1, min(1.0, pulse_amp)).hex
+            label.stylize(Style(color=blended), 0, len(label.plain))
 
-        tree_widget._node = root_node
-        tree_widget._depth = depth
+        line_text.append(label)
 
-        # If we're doing a targeted rebuild, remove ALL children of the parent and rebuild them all
-        # This prevents phantom widgets from persisting in Textual's internal structures
-        if target_widget:
-            tree_widget.remove_children()
-            # Clear target_widget so we rebuild all siblings, not just the target
-            target_widget = None
+        # Base style carries the theme background so blank cells (indent, right
+        # pad) match the surface; the age column and colored text keep their own
+        # colors because apply_style layers the base *underneath* segment styles.
+        base = self.rich_style
+        segments = [self._age_segment(row)] + list(line_text.render(self.app.console))
+        strip = Strip(segments).apply_style(base)
+        return strip.adjust_cell_length(max(self.virtual_size.width, width), base)
 
-        for node in root_node.children:
+    def render_line(self, y: int) -> Strip:
+        width = self.size.width
+        scroll_x, scroll_y = self.scroll_offset
+        index = y + scroll_y
 
-            text = node.get_text()
+        if index < 0 or index >= len(self.rows):
+            return Strip.blank(width, self.rich_style)
 
-            is_done = node.is_done()
-            if is_done and self.note_tree.hide_done:
-                continue
+        row = self.rows[index]
+        pulse_state = self._pulse_state.get(id(row.node))
+        pulse_amp = (
+            self._pulse_amplitude(pulse_state, monotonic()) if pulse_state else 0.0
+        )
+        pulse_bucket = int(pulse_amp * 32) if pulse_amp > 0 else None
 
-            if self.note_tree.hide_archive and "#ARCHIVE" in node.text:
-                continue
-
-            # 2 for arrow + space
-            # 4 for age strip + space
-            widget_width = self.size.width or self.app.size.width
-            available_width = max(1, widget_width - (self.guide_depth * depth + 2 + 4))
-
-            # if node.is_collapsed:
-            #     text += " [•••]"
-
-            parts = textwrap.wrap(text, width=available_width)
-
-            if depth == 0 and not node == root_node.children[0]:
-                spacer_node = tree_widget.add("")
-                spacer_node._node = node
-
-            parts[0] = (
-                "> " + parts[0]
-            )  # use a placeholder arrow here, will be replaced when we apply line formatting
-
-            widgets = []
-            first_widget = tree_widget.add(parts[0])
-            first_widget._depth = depth + 1
-            first_widget._node = node
-            widgets.append(first_widget)
-            for p in parts[1:]:
-                w = tree_widget.add("  " + p)
-                w._depth = depth + 1
-                w._node = node
-                widgets.append(w)
-
-            self._link_multiline(widgets)
-            for w in widgets:
-                self.set_styled_node_label(w)
-            if len(widgets) > 1:
-                first_widget.expand()
-
-            child_widget = widgets[-1]
-
-            if not node.is_collapsed:
-                self.build_tree(child_widget, node, depth=depth + 1)
-
-            if not node.is_collapsed:
-                child_widget.expand()
-
-    def render(self, target_widget=None) -> None:
-        """Load tab-indented data and populate the tree."""
-
-        tvars = self.app.get_theme_variable_defaults()
-        if "age-color-0" in tvars:
-            self.age_gradient = Gradient(
-                (0, tvars["age-color-0"]),
-                (0.5, tvars["age-color-1"]),
-                (1, tvars["age-color-2"]),
-            )
-
-        if target_widget is None:
-            self.root.remove_children()  # Clear the tree before reloading
-            self.build_tree(self.root, self.note_tree.context_node, depth=0)
-            self.app.status_bar.context_node = self.note_tree.context_node
-            doodle = getattr(self.app, "doodle_pane", None)
-            if doodle is not None:
-                doodle.set_context(self.note_tree.context_node)
+        cache_key = (index, width, index == self.cursor_row, pulse_bucket)
+        if cache_key in self._line_cache:
+            strip = self._line_cache[cache_key]
         else:
-            self.build_tree(
-                target_widget.parent,
-                target_widget.parent._node,
-                depth=target_widget.parent._depth,
-                target_widget=target_widget,
-            )
+            strip = self._build_strip(index, width)
+            self._line_cache[cache_key] = strip
 
-        self.app.status_bar.needs_saving = self.note_tree.has_unsaved_operations
+        return strip.crop(scroll_x, scroll_x + width)
 
-    def update_location(self, context_node, line_node):
-        self.note_tree.update_context(context_node)
-        # self.move_cursor_to_line(0)
-        self.render()
-        self._fix_cursor_position(line_node)
+    # --------------------------------------------------------------- actions
 
     def action_cycle_highlight(self):
-        if not self.cursor_node:
+        node = self.cursor_node
+        if not node:
             return
-
-        self.note_tree.push_undo(self.cursor_node._node.parent)
-        self.cursor_node._node.cycle_highlight()
-        self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
+        # Only node.text changes, so snapshot node (not its parent subtree).
+        self.note_tree.push_undo(node)
+        node.cycle_highlight()
+        if not self._restyle_node(node):
+            self.render()
+            self._fix_cursor_position(node)
 
     def action_toggle_done(self):
-        if not self.cursor_node:
+        node = self.cursor_node
+        if not node:
             return
-
-        node = self.cursor_node._node
-
-        self.note_tree.push_undo(node.parent)
+        # Only node.text changes, so snapshot node (not its parent subtree).
+        self.note_tree.push_undo(node)
         node.toggle_done()
         self.note_tree.has_unsaved_operations = True
-        self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
+        if not self._restyle_node(node):
+            self.render()
+            self._fix_cursor_position(node)
 
     def action_toggle_hide_done(self):
-
+        node = self.cursor_node
         self.note_tree.hide_done = not self.note_tree.hide_done
         self.app.status_bar.hide_done = self.note_tree.hide_done
-
-        self.note_tree.update_visible_node_list()
         self.render()
-        if self.note_tree.hide_done and self.cursor_node._node.is_done():
+        if self.note_tree.hide_done and node and node.is_done():
             self.move_cursor_to_line(0)
         else:
-            self._fix_cursor_position(self.cursor_node._node)
-
-        # self._update_progress()
-
-    def _fix_cursor_position(self, target_node):
-        if not target_node:
-            return
-        # find where the cursor line should be
-        for l in self._tree_lines:
-            if not hasattr(l.path[-1], "_node"):
-                continue
-            candidate = l.path[-1]
-            if candidate._node != target_node:
-                continue
-            # skip the empty spacer rows inserted between top-level children
-            if not candidate.label.plain.strip():
-                continue
-            if self._is_first_widget(candidate):
-                self.move_cursor(candidate)
-                return
-
-    def _render_around_cursor(self) -> None:
-        parent_widget = self.cursor_node.parent
-        if parent_widget is None or parent_widget.parent is None:
-            self.render()
-        else:
-            self.render(target_widget=parent_widget)
+            self._fix_cursor_position(node)
 
     def action_indent(self):
-        if not self.cursor_node:
+        node = self.cursor_node
+        if not node:
             return
-
-        _node = self.cursor_node._node
-
-        self.note_tree.push_undo(_node.parent)
-        self.note_tree.indent(self.cursor_node._node)
-        self._render_around_cursor()
-
-        self._fix_cursor_position(_node)
+        self.note_tree.push_undo(node.parent)
+        self.note_tree.indent(node)
+        self.render()
+        self._fix_cursor_position(node)
 
     def action_deindent(self):
-        if not self.cursor_node:
+        node = self.cursor_node
+        if not node:
             return
-
-        _node = self.cursor_node._node
         # Deindent moves node from parent to grandparent, so snapshot grandparent
         undo_target = (
-            _node.parent.parent
-            if _node.parent and _node.parent.parent
-            else _node.parent
+            node.parent.parent if node.parent and node.parent.parent else node.parent
         )
         self.note_tree.push_undo(undo_target)
-        self.note_tree.deindent(self.cursor_node._node)
-        self.render()  # target_widget=self.cursor_node.parent.parent)
-
-        self._fix_cursor_position(_node)
+        self.note_tree.deindent(node)
+        self.render()
+        self._fix_cursor_position(node)
 
     def action_delete_node(self):
-        if not self.cursor_node:
+        node = self.cursor_node
+        if not node:
             return
-
-        node_obj = self.cursor_node._node
-        if node_obj in self.note_tree.copied_nodes:
-            self.note_tree.copied_nodes.remove(node_obj)
-            self.note_tree.remove_bookmark_for(node_obj)
+        if node in self.note_tree.copied_nodes:
+            self.note_tree.copied_nodes.remove(node)
+            self.note_tree.remove_bookmark_for(node)
             if self.app.info_sidebar.display:
                 self.app.info_sidebar.update_data()
-
-        self.note_tree.push_undo(self.cursor_node._node.parent)
-        self.note_tree.delete_focus_node(self.cursor_node._node)
-
-        self._render_around_cursor()
+        self.note_tree.push_undo(node.parent)
+        self.note_tree.delete_focus_node(node)
+        self.render()
 
     def action_toggle_node(self):
-
-        # node_widget = event.node
-        if not self.cursor_node:
+        node = self.cursor_node
+        if not node:
             return
-
-        self.note_tree.toggle_collapse(self.cursor_node._node)
-        self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
+        self.note_tree.toggle_collapse(node)
+        self.render()
+        self._fix_cursor_position(node)
 
     def action_add_note(self):
-
-        if self.cursor_node:
-            focus_node = self.cursor_node._node
-        else:
-            focus_node = self.note_tree.context_node
-
+        focus_node = self.cursor_node or self.note_tree.context_node
         self.note_tree.push_undo(focus_node.parent or focus_node)
         _node = self.note_tree.contextual_add_new_note(focus_node)
         self.render()
-
-        # initiate editing of the node
         if _node:
             self._fix_cursor_position(_node)
             self._arm_pulse = True
             self.app.action_edit_note()
 
     def action_move_node(self, direction: str):
-        if (
-            self.cursor_node
-            and hasattr(self.cursor_node, "_node")
-            and self.cursor_node._node
-        ):
-            _node = self.cursor_node._node
-            self.note_tree.push_undo(_node.parent)
-            self.note_tree.move_line(_node, direction=direction)
-            self._render_around_cursor()
-            self._fix_cursor_position(_node)
+        node = self.cursor_node
+        if not node:
+            return
+        self.note_tree.push_undo(node.parent)
+        self.note_tree.move_line(node, direction=direction)
+        self.render()
+        self._fix_cursor_position(node)
 
     def action_toggle_copy(self):
-        if not self.cursor_node or not hasattr(self.cursor_node, "_node"):
-            return
-        node = self.cursor_node._node
-        if not node.parent:
+        node = self.cursor_node
+        if not node or not node.parent:
             return
         self.app.copied_toggle(node)
-        self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
+        if not self._restyle_node(node):
+            self.render()
+            self._fix_cursor_position(node)
 
     def action_jump_to_copy(self):
         self.app.copied_jump_to_next()
 
     def action_yank_node(self):
-        if not self.cursor_node or not hasattr(self.cursor_node, "_node"):
-            return
-        node = self.cursor_node._node
+        node = self.cursor_node
         if not node:
             return
         if copy_to_clipboard(node.text):
@@ -538,9 +589,7 @@ class NoteTreeWidget(Tree):
             self.app.notify("Failed to copy to clipboard")
 
     def action_yank_subtree(self):
-        if not self.cursor_node or not hasattr(self.cursor_node, "_node"):
-            return
-        node = self.cursor_node._node
+        node = self.cursor_node
         if not node:
             return
         text = node_subtree_as_text(node)
@@ -556,10 +605,11 @@ class NoteTreeWidget(Tree):
         self.app.copied_cycle_target()
 
     def action_paste_node(self):
-        if not self.note_tree.copied_nodes or not self.cursor_node:
+        node = self.cursor_node
+        if not self.note_tree.copied_nodes or not node:
             return
         source = self.note_tree.copied_nodes[-1]
-        destination = self.cursor_node._node
+        destination = node
         if destination == source:
             return
         as_sibling = (
@@ -582,10 +632,11 @@ class NoteTreeWidget(Tree):
         self._fix_cursor_position(source)
 
     def action_paste_link(self):
-        if not self.note_tree.copied_nodes or not self.cursor_node:
+        node = self.cursor_node
+        if not self.note_tree.copied_nodes or not node:
             return
         source = self.note_tree.copied_nodes[-1]
-        destination = self.cursor_node._node
+        destination = node
         if destination == source:
             return
         path_parts = source.get_path(include_self=True)[1:]
@@ -615,20 +666,18 @@ class NoteTreeWidget(Tree):
         self._fix_cursor_position(new_node)
 
     def on_resize(self, event) -> None:
-        new_size = event.size
         self.render()
         if not self._initial_render_done:
             self._initial_render_done = True
-            if self._tree_lines:
+            if self.rows:
                 self.move_cursor_to_line(0)
 
     def action_zoom_in(self):
-        if not self.cursor_node:
+        node = self.cursor_node
+        if not node:
             return
         if self.app.in_search_mode():
             return
-
-        node = self.cursor_node._node
 
         if not node.children:
             paths = extract_path_references(node.text)
@@ -647,17 +696,16 @@ class NoteTreeWidget(Tree):
             return
 
         self.note_tree.update_context(node)
-
         self.render()
-        self.cursor_line = 0
-
-        self._fix_cursor_position(self.note_tree.context_node.children[0])
+        if self.note_tree.context_node.children:
+            self._fix_cursor_position(self.note_tree.context_node.children[0])
 
     def action_zoom_out(self):
         if self.app.in_search_mode():
             return
 
-        if not self.cursor_node:
+        node = self.cursor_node
+        if not node:
             self.note_tree.update_context(
                 self.note_tree.context_node.parent, expand=True
             )
@@ -665,75 +713,55 @@ class NoteTreeWidget(Tree):
             self.move_cursor_to_line(0)
             return
 
-        if not self.cursor_node._node.parent:
+        if not node.parent:
             return
 
         current_node_list = self.note_tree.context_node.get_node_list(
-            only_visible=False,  # need false here in case the context node is collapsed
+            only_visible=False,  # false in case the context node is collapsed
             hide_done=self.note_tree.hide_done,
             hide_archive=self.note_tree.hide_archive,
         )[1:]
-        # if the parent is already in the current context.. just switch lines
-        if self.cursor_node._node.parent in current_node_list:
-            self.move_cursor(self.cursor_node.parent)
-            if not self._is_first_widget(self.cursor_node):
-                self.move_cursor(self._first_widget(self.cursor_node))
-        elif self.cursor_line != 0:
+        # if the parent is already visible in the current context, just move to it
+        if node.parent in current_node_list:
+            self._fix_cursor_position(node.parent)
+        elif self.cursor_row != 0:
             self.move_cursor_to_line(0)
         else:
             if self.note_tree.context_node.depth > 0:
-                _node = self.note_tree.context_node  # self.cursor_node._node.parent
+                _node = self.note_tree.context_node
                 self.note_tree.update_context(self.note_tree.context_node.parent)
                 self.render()
-
                 self._fix_cursor_position(_node)
 
     def on_mouse_scroll_down(self, event):
         event.prevent_default()
         event.stop()
-        # for _ in range(3):
         self.action_cursor_down()
 
     def on_mouse_scroll_up(self, event):
         event.prevent_default()
         event.stop()
-        # for _ in range(3):
         self.action_cursor_up()
 
     def action_cursor_down(self):
-        if not self.note_tree.context_node.children:
+        n = len(self.rows)
+        if n == 0:
             return
-
-        for _ in range(10):
-
-            if self.cursor_line < self.last_line:
-                self.move_cursor_to_line(self.cursor_line + 1)
-            elif self.cursor_line == self.last_line:
-                self.move_cursor_to_line(0)
-
-            if self.cursor_node.label.plain.strip() and self._is_first_widget(
-                self.cursor_node
-            ):
-                break
+        for off in range(1, n + 1):
+            j = (self.cursor_row + off) % n
+            if self._is_navigable(j):
+                self._set_cursor(j)
+                return
 
     def action_cursor_up(self):
-        if not self.note_tree.context_node.children:
+        n = len(self.rows)
+        if n == 0:
             return
-
-        if not self.cursor_node:
-            self.move_cursor_to_line(0)
-            return
-
-        for _ in range(10):
-            if self.cursor_line > 0:
-                self.move_cursor_to_line(self.cursor_line - 1)
-            elif self.cursor_line == 0:
-                self.move_cursor_to_line(self.last_line)
-
-            if self.cursor_node.label.plain.strip() and self._is_first_widget(
-                self.cursor_node
-            ):
-                break
+        for off in range(1, n + 1):
+            j = (self.cursor_row - off) % n
+            if self._is_navigable(j):
+                self._set_cursor(j)
+                return
 
     def action_save(self):
         logging.info("SAVING")
@@ -752,16 +780,15 @@ class NoteTreeWidget(Tree):
 
     def add_journal_entry(self, text):
         new_node = self.note_tree.add_journal_entry(text)
-        self.note_tree.context_node = new_node.parent  # self.cursor_node._node.parent
-        self.move_cursor_to_line(0)
+        self.note_tree.context_node = new_node.parent
         self.render()
+        self.move_cursor_to_line(0)
 
     def visit_bookmark(self, bookmark_index: int):
-
         _node = self.note_tree.jump_to_bookmark(bookmark_index)
         if _node:
-            self.move_cursor_to_line(0)
             self.render()
+            self.move_cursor_to_line(0)
 
     def jump_to_random(self, global_scope=False):
         if global_scope:
@@ -793,214 +820,45 @@ class NoteTreeWidget(Tree):
                 if node.is_collapsed:
                     node.is_collapsed = False
                 node = node.parent
-            self.note_tree.update_visible_node_list()
             self.render()
             self._fix_cursor_position(target)
 
     def assign_bookmark(self, slot: int):
-        if not self.cursor_node:
+        node = self.cursor_node
+        if not node or not node.parent:
             return
-        _node = self.cursor_node._node
-        if not _node.parent:
-            return
-        self.note_tree.assign_bookmark(_node, slot)
+        self.note_tree.assign_bookmark(node, slot)
         if self.app.info_sidebar.display:
             self.app.info_sidebar.update_data()
-        self.render(target_widget=self.get_first_widget_for_node(self.cursor_node))
+        if not self._restyle_node(node):
+            self.render()
+            self._fix_cursor_position(node)
 
     def add_subtree(self, subtree_name: str):
-        if not self.cursor_node or not self.cursor_node._node:
+        node = self.cursor_node
+        if not node:
             return
-
         if subtree_name in SUBTREES:
-            add_subtree(self.cursor_node._node, SUBTREES[subtree_name])
-
+            add_subtree(node, SUBTREES[subtree_name])
             self.render()
 
-    def _render_line(self, y: int, x1: int, x2: int, base_style: Style) -> Strip:
-        tree_lines = self._tree_lines
-        width = self.size.width
-
-        if y >= len(tree_lines):
-            return Strip.blank(width, base_style)
-
-        line = tree_lines[y]
-
-        is_hover = self.hover_line >= 0 and any(node._hover for node in line.path)
-
-        _ln_node = line.path[-1]._node if hasattr(line.path[-1], "_node") else None
-        _pulse_state = self._pulse_state.get(id(_ln_node)) if _ln_node else None
-        _pulse_amp = (
-            self._pulse_amplitude(_pulse_state, monotonic())
-            if _pulse_state is not None
-            else 0.0
-        )
-        # Quantize amplitude into the cache key so frames are cached per step.
-        _pulse_bucket = int(_pulse_amp * 32) if _pulse_amp > 0 else None
-
-        cache_key = (
-            y,
-            is_hover,
-            width,
-            self._updates,
-            self._pseudo_class_state,
-            tuple(node._updates for node in line.path),
-            _pulse_bucket,
-        )
-        if cache_key in self._line_cache:
-            strip = self._line_cache[cache_key]
-        else:
-            # Allow tree guides to be explicitly disabled by setting color to transparent
-            base_hidden = self.get_component_styles("tree--guides").color.a == 0
-            hover_hidden = self.get_component_styles("tree--guides-hover").color.a == 0
-            selected_hidden = (
-                self.get_component_styles("tree--guides-selected").color.a == 0
-            )
-
-            base_guide_style = self.get_component_rich_style(
-                "tree--guides", partial=True
-            )
-            guide_hover_style = base_guide_style + self.get_component_rich_style(
-                "tree--guides-hover", partial=True
-            )
-            guide_selected_style = base_guide_style + self.get_component_rich_style(
-                "tree--guides-selected", partial=True
-            )
-
-            hover = line.path[0]._hover
-            selected = line.path[0]._selected and self.has_focus
-
-            def get_guides(style: Style, hidden: bool) -> tuple[str, str, str, str]:
-                """Get the guide strings for a given style.
-
-                Args:
-                    style: A Style object.
-                    hidden: Switch to hide guides (make them invisible).
-
-                Returns:
-                    Strings for space, vertical, terminator and cross.
-                """
-                lines: tuple[Iterable[str], Iterable[str], Iterable[str], Iterable[str]]
-                if self.show_guides and not hidden:
-                    lines = self.LINES["default"]
-                    if style.bold:
-                        lines = self.LINES["bold"]
-                    elif style.underline2:
-                        lines = self.LINES["double"]
-                else:
-                    lines = ("  ", "  ", "  ", "  ")
-
-                guide_depth = max(0, self.guide_depth - 2)
-                guide_lines = tuple(
-                    f"{characters[0]}{characters[1] * guide_depth} "
-                    for characters in lines
-                )
-                return cast("tuple[str, str, str, str]", guide_lines)
-
-            if is_hover:
-                line_style = self.get_component_rich_style("tree--highlight-line")
-            else:
-                line_style = base_style
-
-            line_style += Style(meta={"line": y})
-
-            guides = Text(style=line_style)
-            guides_append = guides.append
-
-            guide_style = base_guide_style
-
-            hidden = True
-            for node in line.path[1:]:
-                hidden = base_hidden
-                if hover:
-                    guide_style = guide_hover_style
-                    hidden = hover_hidden
-                if selected:
-                    guide_style = guide_selected_style
-                    hidden = selected_hidden
-
-                space, vertical, _, _ = get_guides(guide_style, hidden)
-                guide = space if node.is_last else vertical
-                if node != line.path[-1]:
-                    guides_append(guide, style=guide_style)
-                hover = hover or node._hover
-                selected = (selected or node._selected) and self.has_focus
-
-            if len(line.path) > 1:
-                _, _, terminator, cross = get_guides(guide_style, hidden)
-                if line.last:
-                    guides.append(terminator, style=guide_style)
-                else:
-                    guides.append(cross, style=guide_style)
-
-            label_style = self.get_component_rich_style("tree--label", partial=True)
-            if self.hover_line == y:
-                label_style += self.get_component_rich_style(
-                    "tree--highlight", partial=True
-                )
-            # if self.cursor_line == y:
-            #     label_style += self.get_component_rich_style(
-            #         "tree--cursor", partial=False
-            #     )
-
-            label = self.render_label(line.path[-1], line_style, label_style).copy()
-            label.stylize(Style(meta={"node": line.node._id}))
-
-            if _pulse_amp > 0:
-                tvars = self.app.theme_variables
-                fg = Color.parse(tvars.get("foreground", "#ffffff"))
-                hl1 = Color.parse(tvars.get("HL1", "green"))
-                blended = fg.blend(hl1, min(1.0, _pulse_amp)).hex
-                label.stylize(Style(color=blended), 0, len(label.plain))
-
-            guides.append(label)
-
-            age_char = "    "
-            age_segment = Segment(age_char)
-            if line.path[-1]._node:
-                _n = line.path[-1]._node
-                is_copied = _n in self.note_tree.copied_nodes
-                is_bookmarked = self.note_tree.determine_if_bookmarked(_n)
-                if line.path[-1].label.plain.strip():
-                    if is_bookmarked:
-                        age_char = "▎💠 "
-                    elif is_copied:
-                        age_char = "▎🔹 "
-                    else:
-                        age_char = "▎   "
-                else:
-                    age_char = "▎   "
-                age_days = line.path[-1]._node.get_days_old()
-                age_color = self.age_gradient.get_color(min(1, age_days / 365)).hex
-                age_bg = self.app.get_theme_variable_defaults().get(
-                    "age-column-bg", "#1f170d"
-                )
-                age_segment = Segment(age_char, Style(color=age_color, bgcolor=age_bg))
-
-            segments = [age_segment] + list(guides.render(self.app.console))
-            pad_width = max(self.virtual_size.width, width)
-            segments = line_pad(segments, 0, pad_width - guides.cell_len, line_style)
-
-            strip = self._line_cache[cache_key] = Strip(segments)
-
-        strip = strip.crop(x1, x2)
-        return strip
+    # --------------------------------------------------------------- status
 
     def _update_progress(self):
-        node = self._get_node(self.cursor_line)
-        if not node or not hasattr(node, "_node") or not node._node:
+        node = self.cursor_node
+        if not node:
             self.app.status_bar.progress = (0, 0)
-        else:
-            try:
-                self.app.status_bar.progress = (
-                    self.note_tree.visible_node_list.index(node._node),
-                    len(self.note_tree.visible_node_list) - 1,
-                )
-            except ValueError:
-                logging.error(f"Node not in list: {node._node.text}")
+            return
+        try:
+            self.app.status_bar.progress = (
+                self.note_tree.visible_node_list.index(node),
+                len(self.note_tree.visible_node_list) - 1,
+            )
+        except ValueError:
+            logging.error(f"Node not in list: {node.text}")
 
     def _scroll_cursor_into_margin(self) -> None:
-        line = self.cursor_line
+        line = self.cursor_row
         height = self.size.height
         if height <= 0 or line < 0:
             return
@@ -1012,23 +870,3 @@ class NoteTreeWidget(Tree):
             self.scroll_to(y=max(0, line - margin), animate=False, force=True)
         elif line > bottom - margin:
             self.scroll_to(y=line - height + 1 + margin, animate=False, force=True)
-
-    def watch_cursor_line(self, previous_line: int, line: int) -> None:
-        node = self._get_node(line)
-
-        # Unstyle previous node and last node (last can get spuriously
-        # cursor-styled when _tree_lines shifts during tree rebuild)
-        for l in (previous_line, len(self._tree_lines) - 1):
-            if l != line:
-                n = self._get_node(l)
-                if n and n.label:
-                    self.set_styled_node_label(n)
-
-        if node and node.label:
-            self.set_styled_node_label(node, is_cursor=True)
-
-        self._update_progress()
-
-        self._scroll_cursor_into_margin()
-
-        super().watch_cursor_line(previous_line, line)

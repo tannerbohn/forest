@@ -15,7 +15,6 @@ python3 -m pip install -r requirements.txt
 
 ### Configuration
 Forest uses `config.json` in the project root for settings:
-- `sound_effects_enabled` (boolean): Enable/disable sound effects on startup
 - `default_theme` (string): Theme name (e.g., "forest", "dracula")
 - `log_level` (string): Logging level ("DEBUG", "INFO", "WARNING", "ERROR")
 - `undo_depth` (integer): Max number of undo steps (default: 50)
@@ -26,7 +25,7 @@ Forest uses `config.json` in the project root for settings:
 - `scroll_margin` (integer): Minimum lines kept between the cursor and the top/bottom of the tree viewport before scrolling. `0` = scroll only at the edge; large values approximate centering. Clamped to at most half the viewport (default: 5)
 - `doodle_pane_visible` (boolean): Whether the doodle pane is shown at startup (default: true)
 
-If `config.json` is missing, Forest uses defaults (sounds enabled, "forest" theme, INFO logging). Copy `config.json.example` to `config.json` to customize settings.
+If `config.json` is missing, Forest uses defaults ("forest" theme, INFO logging). Copy `config.json.example` to `config.json` to customize settings.
 
 ### Running the Application
 ```bash
@@ -42,7 +41,7 @@ python3 src/forest.py trees/my_new_tree.txt
 ### Dependencies
 - `textual`: TUI framework
 - `pytimeparse`: Time duration parsing
-- `playsound3`: Sound effects playback
+- `playsound3`: Timer sound playback
 - `watchdog`: File system monitoring (currently unused in code)
 
 ## Architecture
@@ -70,7 +69,7 @@ python3 src/forest.py trees/my_new_tree.txt
 **Config (config.py)**: Application configuration management
 - Loads settings from `config.json` in project root
 - Falls back to defaults if config file missing
-- Manages: sound effects, theme, log level
+- Manages: theme, log level
 
 **Widgets (widgets/)**: Extracted UI components, each with own `DEFAULT_CSS`
 - **StatusBar**: Reactive status line (context path, save state, timer, search progress)
@@ -158,7 +157,7 @@ python3 src/forest.py trees/my_new_tree.txt
 - `{NOW}`: Replaced with current timestamp `[YYYY-MM-DD HH:MM]`
 
 ### Sound Effects
-- Audio feedback for opening a file and timer events
+- Audio feedback for timer events
 
 ## File Organization
 
@@ -169,7 +168,6 @@ src/
   node.py             - Node class (single note logic)
   note_tree_widget.py - NoteTreeWidget class (UI rendering)
   search_state.py     - SearchState dataclass (search mode state)
-  sound_effects.py    - SoundEffects class (audio feedback system)
   timer.py            - Timer class (countdown timer with repeats)
   config.py           - Config class (settings management)
   sticky_notes.py     - StickyNotesScreen (board view for filtered notes)

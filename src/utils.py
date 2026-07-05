@@ -15,12 +15,6 @@ _ASSETS_DIR = os.path.abspath(
 )
 
 _SOUNDS = {
-    "intro": [
-        os.path.join(_ASSETS_DIR, "wave_1.wav"),
-        os.path.join(_ASSETS_DIR, "wave_2.mp3"),
-        os.path.join(_ASSETS_DIR, "wave_3.mp3"),
-        os.path.join(_ASSETS_DIR, "wave_4.wav"),
-    ],
     "timer": [os.path.join(_ASSETS_DIR, "notification_1.mp3")],
 }
 
@@ -36,7 +30,7 @@ def is_wsl() -> bool:
 
 
 def play_sound_effect(name):
-    """Play a sound effect by name. Supported: 'intro', 'timer'."""
+    """Play a sound effect by name. Supported: 'timer'."""
     if name not in _SOUNDS:
         logging.warning(f"Unknown sound effect: {name}")
         return

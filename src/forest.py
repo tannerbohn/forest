@@ -24,7 +24,7 @@ from search_state import SearchState
 from sticky_notes import StickyNotesScreen, _parse_flashcard
 from themes import THEMES
 from timer import Timer
-from utils import apply_input_substitutions, extract_path_references, play_sound_effect
+from utils import apply_input_substitutions, extract_path_references
 from widgets.doodle_pane import DoodlePane
 from widgets.info_sidebar import InfoSidebar
 from widgets.status_bar import StatusBar
@@ -156,7 +156,6 @@ class ForestApp(App):
         self._node_being_edited = None
         self._search = SearchState()
 
-        self.sound_effects_enabled = self.config.sound_effects_enabled
         self.timer = Timer(self)
         self._sticky_note_state = None
 
@@ -196,10 +195,6 @@ class ForestApp(App):
         self._history_index = -1
 
     def on_mount(self):
-        # Play intro sound
-        if self.sound_effects_enabled:
-            play_sound_effect("intro")
-
         if self.config.auto_save and self.config.auto_save_interval > 0:
             self.set_interval(self.config.auto_save_interval, self._auto_save)
 
@@ -730,25 +725,6 @@ class ForestApp(App):
                 self.note_tree.has_unsaved_operations = True
                 self.note_tree_widget.render()
                 self.note_tree_widget._fix_cursor_position(node)
-                if self.note_tree_widget._arm_pulse:
-                    is_question = new_text.rstrip().endswith("?")
-                    if is_question:
-                        self.note_tree_widget.start_pulse(
-                            node,
-                            period=0.6,
-                            initial=1.0,
-                            decay=0.75,
-                            count=3,
-                        )
-                    else:
-                        self.note_tree_widget.start_pulse(
-                            node,
-                            period=0.5,
-                            initial=0.5,
-                            decay=0.5,
-                            count=1,
-                        )
-            self.note_tree_widget._arm_pulse = False
             self._node_being_edited = None
         else:
             cmd_str = event.value.strip()

@@ -1,5 +1,4 @@
 {
-    "sound_effects_enabled": true,
     "default_theme": "forest",
     "log_level": "INFO",
     "undo_depth": 10,

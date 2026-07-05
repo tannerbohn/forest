@@ -3,13 +3,12 @@ import random
 import re
 import textwrap
 from dataclasses import dataclass
-from time import monotonic
 
 from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
 from textual.binding import Binding
-from textual.color import Color, Gradient
+from textual.color import Gradient
 from textual.geometry import Size
 from textual.scroll_view import ScrollView
 from textual.strip import Strip
@@ -67,8 +66,6 @@ class NoteTreeWidget(ScrollView):
 
     can_focus = True
 
-    PULSE_TICK = 1 / 30
-
     BINDINGS = [
         Binding("up", "cursor_up()", "Up", show=False),
         Binding("down", "cursor_down()", "Down", show=False),
@@ -109,56 +106,12 @@ class NoteTreeWidget(ScrollView):
         # id(node) -> (text, available_width, wrapped_parts); see _build_rows.
         self._wrap_cache: dict[int, tuple[str, int, list[str]]] = {}
 
-        # id(node) -> (start, period, initial, decay, count)
-        self._pulse_state: dict[int, tuple[float, float, float, float, int]] = {}
-        self._pulse_interval = None
-        self._arm_pulse = False
-
         # Defer the first build to on_resize: self.size.width isn't known yet,
         # which would wrap against the full app width (ignoring our margin).
         self._initial_render_done = False
 
         global logging
         logging = self.app.logging
-
-    # ------------------------------------------------------------------ pulse
-
-    def start_pulse(
-        self,
-        node,
-        *,
-        period: float,
-        initial: float,
-        decay: float,
-        count: int,
-    ) -> None:
-        """Begin a decaying half-sine pulse on `node`'s line(s).
-
-        Each of `count` successive pulses lasts `period` seconds; pulse k has
-        peak amplitude `initial * decay**k` (0 = no tint, 1 = full HL1)."""
-        self._pulse_state[id(node)] = (monotonic(), period, initial, decay, count)
-        if self._pulse_interval is None:
-            self._pulse_interval = self.set_interval(self.PULSE_TICK, self._tick_pulse)
-
-    def _pulse_amplitude(self, state: tuple, now: float) -> float:
-        start, period, initial, decay, count = state
-        elapsed = now - start
-        if elapsed < 0 or elapsed >= period * count:
-            return 0.0
-        k, frac = divmod(elapsed, period)
-        return initial * (decay ** int(k)) * math.sin(math.pi * (frac / period))
-
-    def _tick_pulse(self) -> None:
-        now = monotonic()
-        for nid, state in list(self._pulse_state.items()):
-            start, period, _, _, count = state
-            if now - start >= period * count:
-                del self._pulse_state[nid]
-        if not self._pulse_state and self._pulse_interval is not None:
-            self._pulse_interval.stop()
-            self._pulse_interval = None
-        self._line_cache.clear()
-        self.refresh()
 
     # ------------------------------------------------------------- cursor api
 
@@ -425,17 +378,6 @@ class NoteTreeWidget(ScrollView):
             logging.error(f"Text.from_markup failed: {e}")
             label = Text("ERROR")
 
-        pulse_state = self._pulse_state.get(id(row.node))
-        pulse_amp = (
-            self._pulse_amplitude(pulse_state, monotonic()) if pulse_state else 0.0
-        )
-        if pulse_amp > 0:
-            tvars = self.app.theme_variables
-            fg = Color.parse(tvars.get("foreground", "#ffffff"))
-            hl1 = Color.parse(tvars.get("HL1", "green"))
-            blended = fg.blend(hl1, min(1.0, pulse_amp)).hex
-            label.stylize(Style(color=blended), 0, len(label.plain))
-
         line_text.append(label)
 
         # Base style carries the theme background so blank cells (indent, right
@@ -454,14 +396,7 @@ class NoteTreeWidget(ScrollView):
         if index < 0 or index >= len(self.rows):
             return Strip.blank(width, self.rich_style)
 
-        row = self.rows[index]
-        pulse_state = self._pulse_state.get(id(row.node))
-        pulse_amp = (
-            self._pulse_amplitude(pulse_state, monotonic()) if pulse_state else 0.0
-        )
-        pulse_bucket = int(pulse_amp * 32) if pulse_amp > 0 else None
-
-        cache_key = (index, width, index == self.cursor_row, pulse_bucket)
+        cache_key = (index, width, index == self.cursor_row)
         if cache_key in self._line_cache:
             strip = self._line_cache[cache_key]
         else:
@@ -555,7 +490,6 @@ class NoteTreeWidget(ScrollView):
         self.render()
         if _node:
             self._fix_cursor_position(_node)
-            self._arm_pulse = True
             self.app.action_edit_note()
 
     def action_move_node(self, direction: str):

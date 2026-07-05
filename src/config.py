@@ -5,7 +5,6 @@ import logging
 import os
 
 DEFAULT_CONFIG = {
-    "sound_effects_enabled": True,
     "default_theme": "forest",
     "log_level": "INFO",
     "undo_depth": 50,

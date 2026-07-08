@@ -725,6 +725,9 @@ class ForestApp(App):
                 self.note_tree.has_unsaved_operations = True
                 self.note_tree_widget.render()
                 self.note_tree_widget._fix_cursor_position(node)
+                # Editing may add/remove/change a #T- timer.
+                if self.info_sidebar.is_showing_bookmarks():
+                    self.info_sidebar.update_data()
             self._node_being_edited = None
         else:
             cmd_str = event.value.strip()

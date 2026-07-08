@@ -136,6 +136,12 @@ class NoteTree:
         self.context_node = context_node or self.root
         self.update_visible_node_list()
 
+        # Nodes already expired at load are pre-marked so opening the file
+        # doesn't fire a burst of stale notifications.
+        _now = datetime.now()
+        for n in self.iter_timer_nodes():
+            n.expiry_notified = _now > n.expiry_datetime
+
         self._undo_stack = []
         self._redo_stack = []
         self._undo_depth = undo_depth
@@ -264,6 +270,42 @@ class NoteTree:
             hide_archive=self.hide_archive,
         )
         self.context_node.is_collapsed = was_collapsed
+
+    def iter_timer_nodes(self) -> list[Node]:
+        """Return every node that owns a #T- expiry (whole tree, ignoring
+        hide/done/archive filters). Lightweight iterative stack walk that only
+        ever visits attached nodes, so detached/deleted nodes can never appear
+        (no liveness guard needed). Cheap enough to call on every expiry tick
+        and from the sidebar's Expiring section."""
+        out = []
+        stack = [self.root]
+        while stack:
+            node = stack.pop()
+            if node.expiry_datetime is not None:
+                out.append(node)
+            stack.extend(node.children)
+        return out
+
+    def check_expirations(self, timer_nodes):
+        """Check the given timer nodes since the last call. Returns the notes
+        that crossed expiry (for one-shot notifications/commands). Recurring
+        timers re-arm themselves in place as a side effect."""
+        now = datetime.now()
+        newly_expired = []
+        for node in timer_nodes:
+            if now > node.expiry_datetime:
+                if not node.expiry_notified:
+                    newly_expired.append(node)
+                    node.expiry_notified = True
+                # Recurring timers re-arm themselves for the next cycle. This
+                # runs even for already-notified (lapsed-while-closed) nodes so
+                # they get a future target, but without re-firing (no backfill).
+                if node.expiry_recurring and node.reset_expiry():
+                    node.expiry_notified = False
+                    self.has_unsaved_operations = True
+            else:
+                node.expiry_notified = False
+        return newly_expired
 
     # --- Undo/Redo ---
     # Snapshot-based: before each mutation, deepcopy the affected subtree.

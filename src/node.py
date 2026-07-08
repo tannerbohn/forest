@@ -32,6 +32,12 @@ class Node:
                     break
 
         self.expiry_datetime = None
+        self.expiry_duration = None
+        # Whether this note's #T- timer auto-renews on expiry (marker "#T-*").
+        self.expiry_recurring = False
+        # Whether an expiry notification has already fired for the current
+        # expiry window (reset when the timer is renewed / not yet expired).
+        self.expiry_notified = False
         self.extract_expiry()
 
         self.value_dict: dict = {}
@@ -49,18 +55,6 @@ class Node:
             except ValueError:
                 continue
             self.value_dict[key.lower()] = value
-
-    def remove_expired_notes(self):
-
-        if self.parent is None:
-            for child in self.children:
-                child.remove_expired_notes()
-        else:
-            if self.expiry_datetime and datetime.now() > self.expiry_datetime:
-                self.delete_branch()
-            else:
-                for child in self.children:
-                    child.remove_expired_notes()
 
     def ensure_path(self, text_list):
         if not text_list:
@@ -193,9 +187,6 @@ class Node:
     def is_highlighted(self):
         return self.highlight_index is not None
 
-    def is_self_deleting(self):
-        return self.get_expiry() is not None
-
     def get_expiry(self):
         if self.expiry_datetime:
             return self.expiry_datetime
@@ -204,44 +195,92 @@ class Node:
         return self.parent.get_expiry()
 
     def extract_expiry(self):
+        # Token forms (see reset_expiry / expiry_status):
+        #   #T-<duration>@<expiry-iso>  -- current form; keeps duration for reset
+        #   #T-<duration>               -- relative; computed + migrated in place
         self.expiry_datetime = None
+        self.expiry_duration = None
+        self.expiry_recurring = False
         if "#T-" not in self.text:
             return
         words = self.text.split()
-        for w in words:
-            # if w.startswith("#EXPIRY-"):
-            #     time_str = w.split("-", 1)[1]
-            #     try:
-            #         dt = datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%S")
-            #         self.expiry_datetime = dt
-            #     except ValueError:
-            #         pass
-            #     break
-            if w.startswith("#T-"):
-                time_str = w.split("-", 1)[1]
-                if "-" in time_str:
-                    try:
-                        dt = datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%S")
-                        self.expiry_datetime = dt
-                    except ValueError:
-                        pass
-                    break
-                else:
-                    duration = time_str
-                    duration_seconds = parse(duration)
-                    if duration_seconds is not None:
-                        self.expiry_datetime = datetime.now() + timedelta(
-                            seconds=duration_seconds
-                        )
-                        words.remove(w)
-                        words.append(
-                            self.expiry_datetime.strftime("#T-%Y-%m-%dT%H:%M:%S")
-                        )
-                        self.text = " ".join(words)
-                    break
+        for i, w in enumerate(words):
+            if not w.startswith("#T-"):
+                continue
+            spec = w[3:]  # everything after "#T-"
+            # Optional leading "*" marks an auto-renewing (recurring) timer.
+            self.expiry_recurring = spec.startswith("*")
+            if self.expiry_recurring:
+                spec = spec[1:]
+            if "@" in spec:
+                dur_str, _, exp_str = spec.partition("@")
+                self.expiry_duration = dur_str or None
+                try:
+                    self.expiry_datetime = datetime.strptime(
+                        exp_str, "%Y-%m-%dT%H:%M:%S"
+                    )
+                except ValueError:
+                    pass
+            else:
+                # Relative duration -> compute expiry and migrate the token so
+                # the duration is preserved for later resets.
+                duration_seconds = extended_parse(spec)
+                if duration_seconds is not None:
+                    self.expiry_duration = spec
+                    self.expiry_datetime = datetime.now() + timedelta(
+                        seconds=duration_seconds
+                    )
+                    marker = "*" if self.expiry_recurring else ""
+                    words[i] = self.expiry_datetime.strftime(
+                        f"#T-{marker}{spec}@%Y-%m-%dT%H:%M:%S"
+                    )
+                    self.text = " ".join(words)
+            break
 
-    def get_days_remaining(self):
-        return (self.get_expiry() - datetime.now()).days
+    def reset_expiry(self) -> bool:
+        """Restart this note's own #T- countdown for its original duration.
+
+        Returns True if the timer was reset, or False if the note has no
+        resettable duration of its own (an inherited expiry, or no timer at
+        all)."""
+        if not self.expiry_duration:
+            return False
+        duration_seconds = extended_parse(self.expiry_duration)
+        if duration_seconds is None:
+            return False
+        self.expiry_datetime = datetime.now() + timedelta(seconds=duration_seconds)
+        marker = "*" if self.expiry_recurring else ""
+        new_token = self.expiry_datetime.strftime(
+            f"#T-{marker}{self.expiry_duration}@%Y-%m-%dT%H:%M:%S"
+        )
+        words = self.text.split()
+        for i, w in enumerate(words):
+            if w.startswith("#T-"):
+                words[i] = new_token
+                break
+        self.text = " ".join(words)
+        return True
+
+    def is_expired(self) -> bool:
+        expiry = self.get_expiry()
+        return expiry is not None and datetime.now() > expiry
+
+    def expiry_status(self):
+        """For a note that owns a #T- timer, return (expired, label) where
+        `label` is a compact magnitude of the time until/since expiry
+        ('2d' / '5h' / '12m'). Returns None for notes without their own timer."""
+        if self.expiry_datetime is None:
+            return None
+        delta = self.expiry_datetime - datetime.now()
+        expired = delta.total_seconds() < 0
+        seconds = int(abs(delta.total_seconds()))
+        if seconds >= 86400:
+            label = f"{seconds // 86400}d"
+        elif seconds >= 3600:
+            label = f"{seconds // 3600}h"
+        else:
+            label = f"{max(1, seconds // 60)}m"
+        return expired, label
 
     def toggle_done(self):
 
@@ -504,7 +543,16 @@ class Node:
             logger.info(f"Invalid command: '{self.text}'")
             return
 
-        command = self.text[1:] + " > /dev/null 2>&1 &"
+        # Drop Forest control tokens (timer / done / highlight) so they are not
+        # passed to the shell -- relevant when a command note also carries #T-.
+        words = [
+            w
+            for w in self.text[1:].split()
+            if not w.startswith("#T-")
+            and w != "#DONE"
+            and w not in self.HIGHLIGHT_HASHTAGS
+        ]
+        command = " ".join(words).strip() + " > /dev/null 2>&1 &"
 
         # cmdStr=WEB_BROWSER+" https://www.youtube.com/results?search_query="+youtubeStr.replace(' ','+')+" > /dev/null 2>&1 &"
         subprocess.call(command, shell=True)

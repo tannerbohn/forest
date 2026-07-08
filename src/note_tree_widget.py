@@ -17,7 +17,8 @@ from clipboard import copy_to_clipboard
 from note_tree import NoteTree
 from subtrees import SUBTREES
 from themes import TEXT_COLOR_REGEX_LIST
-from utils import add_subtree, extract_path_references, node_subtree_as_text
+from utils import (add_subtree, extract_path_references, node_subtree_as_text,
+                   play_sound_effect)
 
 logging = None
 
@@ -90,6 +91,7 @@ class NoteTreeWidget(ScrollView):
         Binding("l", "paste_link()", "Paste link to copied note", show=False),
         Binding("y", "yank_node()", "Yank to clipboard", show=False),
         Binding("Y", "yank_subtree()", "Yank subtree to clipboard", show=False),
+        Binding("r", "renew_expiry()", "Renew expiry", show=False),
     ]
 
     def __init__(self, note_tree: NoteTree, id: str):
@@ -308,8 +310,13 @@ class NoteTreeWidget(ScrollView):
         else:
             body = "  " + row.text  # continuation lines align under the text
 
-        # completion coloring first so it overrides highlights
-        if node.is_done():
+        # An expired note reads as expired even if also done/highlighted, so it
+        # takes precedence over both.
+        is_expired_owner = node.expiry_datetime is not None and node.is_expired()
+        if is_expired_owner:
+            red = tvars.get("HL3") or "red"
+            body = f"[dim {red}]{body}[/dim {red}]"
+        elif node.is_done():
             tag = tvars.get("dim-text") or "dim"
             body = f"[{tag}]{body}[/{tag}]"
         else:
@@ -346,24 +353,48 @@ class NoteTreeWidget(ScrollView):
                 else:
                     body += f" {'•' * dot_count}"
 
+        # Inline time-left / expired readout on the owner note's last segment.
+        if node.expiry_datetime is not None and is_last:
+            status = node.expiry_status()
+            if status is not None:
+                expired, label = status
+                loop = " ↺" if node.expiry_recurring else ""
+                if expired:
+                    red = tvars.get("HL3") or "red"
+                    body += f" [dim {red}]⌛{label} ago{loop}[/dim {red}]"
+                else:
+                    amber = tvars.get("HL2") or "yellow"
+                    body += f" [{amber}]⏳{label}{loop}[/{amber}]"
+
         return arrow_str + body
 
-    def _age_segment(self, row: VisualRow) -> Segment:
+    def _gutter_segments(self, row: VisualRow) -> list[Segment]:
+        # [age bar ▎] + [2-cell glyph slot]. The glyph is bookmark > copied >
+        # expiring-T > blank; the T carries its own expiry color while the rest
+        # of the gutter stays age-colored.
         node = row.node
         tvars = self.app.get_theme_variable_defaults()
-        if row.text.strip():
-            if self.note_tree.determine_if_bookmarked(node):
-                age_char = "▎💠 "
-            elif node in self.note_tree.copied_nodes:
-                age_char = "▎🔹 "
-            else:
-                age_char = "▎   "
-        else:
-            age_char = "▎   "
         age_days = node.get_days_old()
         age_color = self.age_gradient.get_color(min(1, age_days / 365)).hex
         age_bg = tvars.get("age-column-bg", "#1f170d")
-        return Segment(age_char, Style(color=age_color, bgcolor=age_bg))
+        age_style = Style(color=age_color, bgcolor=age_bg)
+        bar = Segment("▎", age_style)
+
+        glyph, glyph_style = "   ", age_style
+        if row.text.strip():
+            if self.note_tree.determine_if_bookmarked(node):
+                glyph = "💠 "
+            elif node in self.note_tree.copied_nodes:
+                glyph = "🔹 "
+            elif node.expiry_datetime is not None:
+                glyph = "T  "
+                if node.is_expired():
+                    color = tvars.get("HL3") or "red"
+                    glyph_style = Style(color=color, bgcolor=age_bg, bold=True)
+                else:
+                    color = tvars.get("HL2") or "yellow"
+                    glyph_style = Style(color=color, bgcolor=age_bg)
+        return [bar, Segment(glyph, glyph_style)]
 
     def _build_strip(self, index: int, width: int) -> Strip:
         row = self.rows[index]
@@ -384,7 +415,7 @@ class NoteTreeWidget(ScrollView):
         # pad) match the surface; the age column and colored text keep their own
         # colors because apply_style layers the base *underneath* segment styles.
         base = self.rich_style
-        segments = [self._age_segment(row)] + list(line_text.render(self.app.console))
+        segments = self._gutter_segments(row) + list(line_text.render(self.app.console))
         strip = Strip(segments).apply_style(base)
         return strip.adjust_cell_length(max(self.virtual_size.width, width), base)
 
@@ -430,6 +461,23 @@ class NoteTreeWidget(ScrollView):
             self.render()
             self._fix_cursor_position(node)
 
+    def action_renew_expiry(self):
+        node = self.cursor_node
+        if not node or not node.expiry_duration:
+            if node and node.expiry_datetime is not None:
+                self.app.notify("This timer has no stored duration to renew")
+            return
+        # Only node.text changes, so snapshot node (not its parent subtree).
+        self.note_tree.push_undo(node)
+        node.reset_expiry()
+        self.note_tree.has_unsaved_operations = True
+        self.app.status_bar.show_renew_hint = False
+        if not self._restyle_node(node):
+            self.render()
+            self._fix_cursor_position(node)
+        if self.app.info_sidebar.is_showing_bookmarks():
+            self.app.info_sidebar.update_data()
+
     def action_toggle_hide_done(self):
         node = self.cursor_node
         self.note_tree.hide_done = not self.note_tree.hide_done
@@ -469,11 +517,12 @@ class NoteTreeWidget(ScrollView):
         if node in self.note_tree.copied_nodes:
             self.note_tree.copied_nodes.remove(node)
             self.note_tree.remove_bookmark_for(node)
-            if self.app.info_sidebar.display:
-                self.app.info_sidebar.update_data()
         self.note_tree.push_undo(node.parent)
         self.note_tree.delete_focus_node(node)
         self.render()
+        # Deleting may remove a copied/expiring note, so refresh the panel.
+        if self.app.info_sidebar.is_showing_bookmarks():
+            self.app.info_sidebar.update_data()
 
     def action_toggle_node(self):
         node = self.cursor_node
@@ -599,6 +648,46 @@ class NoteTreeWidget(ScrollView):
         self.render()
         self._fix_cursor_position(new_node)
 
+    def on_mount(self) -> None:
+        # Keep the inline time-left readout / expired styling current without a
+        # full rebuild (repaints only viewport rows). See _tick_expiry.
+        # A single tick walks the tree via iter_timer_nodes(); it's cheap
+        # enough (tens of ms even on a 50k-node tree) to run on-demand rather
+        # than maintaining a registry. 30s is ample given minute-granular
+        # countdown labels.
+        self.set_interval(30, self._tick_expiry)
+
+    def _tick_expiry(self) -> None:
+        # Walks the tree for timer nodes each tick, fires notifications for any
+        # that crossed expiry (all timer nodes, not just visible ones), and
+        # keeps the readout / sidebar current.
+        nt = self.note_tree
+        timer_nodes = nt.iter_timer_nodes()
+        if not timer_nodes:
+            return
+        expired_nodes = nt.check_expirations(timer_nodes)
+        if expired_nodes:
+            play_sound_effect("timer")  # same cue as the :timer command
+        for node in expired_nodes:
+            text = node.get_text()  # timer token already stripped
+            loop = " ↺" if node.expiry_recurring else ""
+            if text.startswith("!"):
+                node.run_command()
+                self.app.notify(f"▶ Ran: {text[1:].strip()[:50]}{loop}")
+            else:
+                self.app.notify(f"⌛ Expired: {text[:50]}{loop}", severity="warning")
+        node = self.cursor_node
+        self.app.status_bar.show_renew_hint = bool(node and node.is_expired())
+        # Repaint only when a timer note is actually on screen.
+        if any(r.node.expiry_datetime is not None for r in self.rows):
+            self._line_cache.clear()
+            self.refresh()
+        # Keep the Expiring section current (new/expired notes and drifting
+        # labels), but only when it's the live view (never clobber search/help).
+        # Hand it the list we already walked to avoid a second walk.
+        if self.app.info_sidebar.is_showing_bookmarks():
+            self.app.info_sidebar.update_data(timer_nodes=timer_nodes)
+
     def on_resize(self, event) -> None:
         self.render()
         if not self._initial_render_done:
@@ -706,11 +795,15 @@ class NoteTreeWidget(ScrollView):
         if self.note_tree.pop_undo():
             self.render()
             self.move_cursor_to_line(0)
+            if self.app.info_sidebar.is_showing_bookmarks():
+                self.app.info_sidebar.update_data()
 
     def action_redo(self):
         if self.note_tree.pop_redo():
             self.render()
             self.move_cursor_to_line(0)
+            if self.app.info_sidebar.is_showing_bookmarks():
+                self.app.info_sidebar.update_data()
 
     def add_journal_entry(self, text):
         new_node = self.note_tree.add_journal_entry(text)
@@ -780,6 +873,7 @@ class NoteTreeWidget(ScrollView):
 
     def _update_progress(self):
         node = self.cursor_node
+        self.app.status_bar.show_renew_hint = bool(node and node.is_expired())
         if not node:
             self.app.status_bar.progress = (0, 0)
             return

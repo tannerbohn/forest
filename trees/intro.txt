@@ -53,6 +53,11 @@
 		- :archive show reveals archived branches for the session (an Ⓐ appears in the status bar); :archive hide returns to the default hidden state @{2026-04-17}
 		- archived notes are excluded from search, random jump, and sticky notes as long as :archive hide is in effect @{2026-04-17}
 	- :help shows the help panel @{2026-02-16}
+- Expiring notes (reminders and timers) @{2026-07-08}
+	- Give a note a countdown by tagging it: type the # symbol, then T-, then a duration such as 7d, 30m, 2mo, or 1y @{2026-07-08}
+	- Press r on an expired note to renew it (restart its countdown for the same duration) @{2026-07-08}
+	- To make a note restart itself automatically each time it expires (a repeating reminder), add a * right after the hyphen -- for example a T-*1d tag repeats every day @{2026-07-08}
+	- If a note's text starts with ! (a shell command note), the command runs automatically when the note expires. Combine it with the repeating form for a periodic job, e.g. a !backup.sh note set to repeat daily @{2026-07-08}
 - Side panel @{2026-02-16}
 	- Press ` to cycle through the side panel views (bookmarks, perpetual journal) or hide it @{2026-02-16}
 - Copying and Pasting @{2026-04-09}

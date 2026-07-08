@@ -73,7 +73,7 @@ python3 src/forest.py trees/my_new_tree.txt
 
 **Widgets (widgets/)**: Extracted UI components, each with own `DEFAULT_CSS`
 - **StatusBar**: Reactive status line (context path, save state, timer, search progress)
-- **InfoSidebar**: DataTable-based side panel (bookmarks, copied notes, archived, perpetual journal, search results, help)
+- **InfoSidebar**: DataTable-based side panel (bookmarks, copied notes, expiring notes, archived, perpetual journal, search results, help)
 - **MultiPurposeSuggester**: Auto-completion suggester for command and edit modes (in `suggesters.py`)
 
 **CopiedList (copied_list.py)**: Non-widget helper attached to `ForestApp` as `app.copied_list`. Manages the copied node list (toggle/prune/rotate/cycle_target/jump_to_next) backed by `note_tree.copied_nodes`. The list is rendered as a section inside the InfoSidebar's bookmarks view.
@@ -105,8 +105,20 @@ python3 src/forest.py trees/my_new_tree.txt
 ### Hashtags
 - `#DONE`: Marks task complete, dims in UI
 - `#HL1`, `#HL2`, `#HL3`: Color highlighting
-- `#T-<duration>`: Expiring notes (e.g., #T-7d)
+- `#T-<duration>`: Expiring notes (e.g., #T-7d). `#T-*<duration>` auto-renews (recurring). See Expiring Notes below.
 - `#sum`, `#max`, `#min`, `#avg`: Aggregate child values
+
+### Expiring Notes
+- Tag a note `#T-<duration>` (e.g. `#T-7d`, `#T-30m`, `#T-2mo`, `#T-1y`) to give it a countdown. Durations use `pytimeparse`, extended with `mo` (months) and `y` (years) via `extended_parse` (node.py).
+- On first parse the tag is rewritten to `#T-<duration>@<expiry-iso>` (e.g. `#T-7d@2026-07-14T15:30:00`), keeping both the original duration (for reset) and the computed absolute expiry (stable across reloads). The `#T-...` token is hidden from the displayed note text. Legacy `#T-<expiry-iso>` tags (no duration) still display but can't be reset.
+- A note that owns a timer shows a color-coded **`T`** in the left gutter (`#HL2` while counting down, `#HL3`/red when expired) and an inline readout: `⏳2d` while counting down, `⌛3d ago` once expired. Expired notes are **not deleted** — the whole line is dimmed/reddened so it's obvious. The gutter `T` yields to the bookmark/copied glyph when both apply; the inline readout still conveys expiry. Expiry is inherited by descendants for logic, but the gutter/readout decorate only the tagged note.
+- Expiry is checked on a frequent tick (`_tick_expiry`, every 10s) and a **notification fires once when a note expires** during a session (with the same sound cue as `:timer`, via `play_sound_effect("timer")`; recurring notes show a `↺` in the notification). Notes already expired at load are pre-marked so opening a file doesn't spam stale notifications; renewing a note re-arms it. Expiry checking is global: `NoteTree.timer_nodes` is the registry of all `#T-` notes; `check_expirations()` iterates it (skipping entries that are no longer live via `_timer_node_live`) and returns the notes that crossed expiry since the last check. The frequent tick only walks this (small) registry — never the whole tree. The registry itself is a whole-tree walk, so it's rebuilt on a **slower 60s cadence** (`_refresh_timer_registry` → `refresh_timer_nodes()`, which also refreshes the sidebar labels); it's also built once up front in `on_mount` so the first check has fresh data. A newly added `#T-` note therefore enters the registry within ~60s.
+- The bookmarks side panel (`` ` `` to cycle) lists all timer notes in an **Expiring** section below the Copied Stack, sorted soonest-expiry first; expired entries render dim red, still-counting entries render plain (`_build_expiring_rows` in `widgets/info_sidebar.py`).
+- Press `r` on a note to **renew** it — restart the countdown for its original duration. When the cursor is on an expired note, a `[r]enew` hint appears in the status bar, just left of `[s]ave`. Renew is undoable (`z`).
+
+### Recurring (auto-renewing) Expiry & Commands on Expiry
+- Add a `*` right after the prefix — `#T-*<duration>` (e.g. `#T-*1d`) — to make a timer **auto-renew**: when it expires, `check_expirations()` re-arms it for another cycle instead of leaving it expired. The marker sits inside the `#T-` token (so every `startswith("#T-")` check still applies and it's stripped from display) and is preserved across migration and renew. Recurring timers show a `↺` in the inline readout (e.g. `⏳2d ↺`). Auto-renew sets `has_unsaved_operations` but is **not** pushed to the undo stack (unlike manual `r`).
+- When an **expiry note is also a command note** (text starts with `!`), the command runs automatically the moment the note expires — the run happens in `_tick_expiry` for each node returned by `check_expirations()`. Combined with recurrence this is cron-like: `!backup.sh #T-*1d` runs `backup.sh` daily; `!subl notes.py #T-7d` is a one-shot deferred command. `run_command()` strips Forest control tokens (`#T-...`, `#DONE`, `#HL*`) so they aren't passed to the shell. Commands that lapsed while the app was closed do **not** backfill on open (already-expired-at-load notes are pre-marked); recurring ones still re-arm for the next cycle.
 
 ### Value System
 - Use `$variable=value` syntax in notes
@@ -212,6 +224,7 @@ config.json.example   - Example configuration file (template)
 - `v`: Paste node
 - `y`: Yank cursor note text to system clipboard (OSC 52)
 - `Y`: Yank cursor note + descendants to system clipboard (OSC 52)
+- `r`: Renew the cursor note's `#T-` expiry timer (restart its countdown)
 - `enter`: Add new note
 - `0-9`: Jump to bookmark
 - `z`: Undo

@@ -22,6 +22,7 @@ class StatusBar(Static):
     search_progress = reactive((0, 0))
     timer_remaining = reactive(None)
     has_sticky_recovery = reactive(False)
+    show_renew_hint = reactive(False)
 
     def compose_content(self):
 
@@ -45,6 +46,13 @@ class StatusBar(Static):
         else:
             hl = self.app.get_theme_variable_defaults().get("HL2") or "yellow"
             needs_saving_text = Text.from_markup(f" [dim][{hl}]\\[s]ave[/{hl}][/dim] ")
+
+        # Renew hint, shown just left of [s]ave when the cursor is on an expired note.
+        if self.show_renew_hint:
+            hl = self.app.get_theme_variable_defaults().get("HL3") or "red"
+            renew_hint_text = Text.from_markup(f" [dim][{hl}]\\[r]enew[/{hl}][/dim]")
+        else:
+            renew_hint_text = Text("")
 
         # Timer display
         if self.timer_remaining is not None:
@@ -92,6 +100,7 @@ class StatusBar(Static):
             end_text = (
                 cut_text
                 + timer_text
+                + renew_hint_text
                 + needs_saving_text
                 + sticky_recovery_text
                 + hide_done_text
@@ -139,5 +148,6 @@ for _attr in (
     "search_progress",
     "timer_remaining",
     "has_sticky_recovery",
+    "show_renew_hint",
 ):
     setattr(StatusBar, f"watch_{_attr}", lambda self, _value: self.compose_content())

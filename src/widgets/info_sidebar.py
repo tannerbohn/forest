@@ -27,6 +27,7 @@ class InfoSidebar(DataTable):
     _search_results = []  # list of match nodes when search panel is shown
     _search_highlight_index = 0
     _pre_search_mode_index = 0  # panel mode to restore after search exits
+    _pending_timer_nodes = None  # precomputed #T- list passed from the tick
 
     def on_mount(self):
         """Initialize the DataTable with columns to prevent first-render issues."""
@@ -59,6 +60,17 @@ class InfoSidebar(DataTable):
         else:
             self.styles.border_right = border
             self.styles.border_left = no_border
+
+    def is_showing_bookmarks(self) -> bool:
+        """True when the bookmarks panel (copied stack + Expiring section) is the
+        live view. Used to gate mutation/timer-driven refreshes so they update
+        that panel in place without clobbering a transient search/help overlay
+        (which reuse the widget with display=True but their own contents)."""
+        return (
+            self.display
+            and not self._search_results
+            and self.mode_options[self.mode_index] == "bookmarks"
+        )
 
     def cycle_mode(self):
         old_index = self.mode_index
@@ -319,6 +331,8 @@ class InfoSidebar(DataTable):
                 ]
             )
 
+        rows.extend(self._build_expiring_rows(width))
+
         archived_roots = self._collect_archived_roots()
         if archived_roots:
             rows.extend(
@@ -331,6 +345,37 @@ class InfoSidebar(DataTable):
             for node in archived_roots:
                 text = self._truncate(node.text.replace("#ARCHIVE", "").strip(), width)
                 rows.append(["", Text.from_markup(f"[dim]{text}[/dim]")])
+        return rows
+
+    def _build_expiring_rows(self, width):
+        """Rows listing notes that own a #T- timer, soonest expiry first.
+        Expired notes render dim red; still-counting notes render plain to
+        keep visual noise down. Reuses the timer-node list a caller (the expiry
+        tick) already walked when available, else walks the tree itself."""
+        nodes = self._pending_timer_nodes
+        if nodes is None:
+            nodes = self.app.note_tree.iter_timer_nodes()
+        timer_nodes = sorted(nodes, key=lambda n: n.expiry_datetime)
+        if not timer_nodes:
+            return []
+
+        red = self.app.theme_variables.get("HL3", "red")
+        rows = [
+            ["", ""],
+            ["", Text.from_markup("[b]Expiring[/b]")],
+            ["", ""],
+        ]
+        for node in timer_nodes:
+            expired, label = node.expiry_status()
+            loop = "↺" if node.expiry_recurring else ""
+            text = self._truncate(node.get_text(), width)
+            if expired:
+                marker = Text.from_markup(f"[dim {red}]+{label}{loop}[/dim {red}]")
+                body = Text.from_markup(f"[dim {red}]{text}[/dim {red}]")
+            else:
+                marker = Text.from_markup(f"[dim]{label}{loop}[/dim]")
+                body = Text.from_markup(text)
+            rows.append([marker, body])
         return rows
 
     def _build_perpetual_journal_rows(self, width):
@@ -384,13 +429,17 @@ class InfoSidebar(DataTable):
         "perpetual_journal": _build_perpetual_journal_rows,
     }
 
-    def update_data(self):
+    def update_data(self, timer_nodes=None):
+        # timer_nodes: an already-walked list of #T- owners (from the expiry
+        # tick) that _build_expiring_rows can reuse instead of walking again.
+        self._pending_timer_nodes = timer_nodes
         self._search_results = []
         mode = self.mode_options[self.mode_index]
         if mode is None:
             self.clear(columns=True)
             self.display = False
             self.refresh()
+            self._pending_timer_nodes = None
             return
         self.display = True
         self.show_header = False
@@ -400,3 +449,4 @@ class InfoSidebar(DataTable):
         if builder is not None:
             rows.extend(builder(self, width))
         self._render_rows(rows)
+        self._pending_timer_nodes = None

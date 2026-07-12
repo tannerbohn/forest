@@ -4,8 +4,6 @@
     "undo_depth": 10,
     "auto_save": false,
     "auto_save_interval": 5,
-    "margin_side": "right",
     "margin_width": 30,
-    "scroll_margin": 5,
-    "doodle_pane_visible": true
+    "scroll_margin": 5
 }

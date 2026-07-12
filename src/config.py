@@ -10,10 +10,8 @@ DEFAULT_CONFIG = {
     "undo_depth": 50,
     "auto_save": True,
     "auto_save_interval": 5,
-    "margin_side": "right",
     "margin_width": 30,
     "scroll_margin": 5,
-    "doodle_pane_visible": True,
 }
 
 
@@ -70,18 +68,9 @@ class Config:
         raise AttributeError(name)
 
     @property
-    def margin_side(self):
-        side = self.get("margin_side", "right")
-        return "left" if str(side).lower() == "left" else "right"
-
-    @property
     def margin_width(self):
         return max(0, int(self.get("margin_width", 30)))
 
     @property
     def scroll_margin(self):
         return max(0, int(self.get("scroll_margin", 5)))
-
-    @property
-    def doodle_pane_visible(self):
-        return bool(self.get("doodle_pane_visible", True))

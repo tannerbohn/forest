@@ -12,7 +12,7 @@ class MultiPurposeSuggester(Suggester):
             self.placeholder = (
                 "help | run | timer <duration> | insert <name> | "
                 "j+ <text> | collapse | ?/?* <query> | random/random* | sn/sn* [filter] | snr | "
-                "archive set|unset|show|hide | doodle show|hide|clear"
+                "archive set|unset|show|hide | doodle clear"
             )
         else:
             self.placeholder = ""
@@ -101,9 +101,7 @@ class MultiPurposeSuggester(Suggester):
         if "doodle ".startswith(value_lower) or value_lower.startswith("doodle"):
             # Filter optoins based on what's been typed
             partial = value[7:]  # Get text after "doodle "
-            matching = [
-                name for name in ["show", "hide", "clear"] if name.startswith(partial)
-            ]
+            matching = [name for name in ["clear"] if name.startswith(partial)]
             if matching:
                 return "doodle " + " | ".join(sorted(matching))
 

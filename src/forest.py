@@ -24,7 +24,9 @@ from search_state import SearchState
 from sticky_notes import StickyNotesScreen, _parse_flashcard
 from themes import THEMES
 from timer import Timer
-from utils import apply_input_substitutions, extract_path_references
+from utils import (apply_input_substitutions, compose_clock_notify_contents,
+                   extract_path_references)
+from widgets.command_info_panel import CommandInfoPanel
 from widgets.doodle_pane import DoodlePane
 from widgets.info_sidebar import InfoSidebar
 from widgets.status_bar import StatusBar
@@ -214,15 +216,13 @@ class ForestApp(App):
         return i
 
     def _apply_layout(self):
-        side = self.config.margin_side
+        # Fixed sides: info sidebar on the right, doodle pane on the left. Both
+        # margins are reserved permanently (the panes toggle visibility within
+        # the reserved strip); a margin is only dropped when it would shrink the
+        # tree below its minimum width.
         width = self.config.margin_width
         screen_width = self.size.width
-        opposite = "left" if side == "right" else "right"
-        doodle_visible = (
-            getattr(self, "doodle_pane", None) is not None
-            and self.doodle_pane.pane_visible
-        )
-        doodle_w = self._DOODLE_WIDTH if doodle_visible else 0
+        doodle_w = self._DOODLE_WIDTH
 
         if width <= 0 or screen_width - width < self._MIN_TREE_WIDTH:
             sidebar_margin = 0
@@ -234,13 +234,14 @@ class ForestApp(App):
         remaining = screen_width - sidebar_margin - doodle_w
         doodle_margin = doodle_w if remaining >= self._MIN_TREE_WIDTH else 0
 
-        if side == "left":
-            self.note_tree_widget.styles.margin = (0, doodle_margin, 0, sidebar_margin)
-        else:
-            self.note_tree_widget.styles.margin = (0, sidebar_margin, 0, doodle_margin)
+        # Keep a 1-col gap so the tree text doesn't butt against the sidebar's
+        # divider (only when the sidebar actually reserves space).
+        tree_sidebar_margin = sidebar_margin + 1 if sidebar_margin else 0
 
-        self.info_sidebar.apply_layout(side, sidebar_width)
-        self.doodle_pane.apply_layout(opposite, doodle_w)
+        self.note_tree_widget.styles.margin = (0, tree_sidebar_margin, 0, doodle_margin)
+
+        self.info_sidebar.apply_layout("right", sidebar_width)
+        self.doodle_pane.apply_layout("left", doodle_w)
 
     def on_resize(self, event):
         self.call_after_refresh(self._apply_layout)
@@ -263,25 +264,22 @@ class ForestApp(App):
         self.input_widget = Input(id="input-box", suggester=self.command_suggester)
         yield self.input_widget
 
+        self.command_info_panel = CommandInfoPanel(id="command-info")
+        yield self.command_info_panel
+
         self.note_tree_widget = NoteTreeWidget(note_tree=self.note_tree, id="note-tree")
         self.note_tree_widget.focus()
         self.info_sidebar = InfoSidebar(id="info-sidebar")
         self.doodle_pane = DoodlePane(id="doodle-pane")
 
-        # Pre-apply margin/visibility so the tree's initial render wraps at
-        # the final width, avoiding a visible reflow when on_mount later
-        # calls _apply_layout().
-        doodle_visible = self.config.doodle_pane_visible
-        self.doodle_pane.pane_visible = doodle_visible
-        self.doodle_pane.styles.display = "block" if doodle_visible else "none"
-
-        side = self.config.margin_side
+        # Pre-apply the (constant) margins so the tree's initial render wraps at
+        # the final width, avoiding a visible reflow when on_mount later calls
+        # _apply_layout(). Both panes start hidden; their margins are reserved
+        # regardless. Info sidebar right, doodle pane left.
         sidebar_margin = self.config.margin_width if self.config.margin_width > 0 else 0
-        doodle_margin = self._DOODLE_WIDTH if doodle_visible else 0
-        if side == "left":
-            self.note_tree_widget.styles.margin = (0, doodle_margin, 0, sidebar_margin)
-        else:
-            self.note_tree_widget.styles.margin = (0, sidebar_margin, 0, doodle_margin)
+        tree_sidebar_margin = sidebar_margin + 1 if sidebar_margin else 0
+        doodle_margin = self._DOODLE_WIDTH
+        self.note_tree_widget.styles.margin = (0, tree_sidebar_margin, 0, doodle_margin)
 
         yield self.note_tree_widget
         yield self.info_sidebar
@@ -294,15 +292,42 @@ class ForestApp(App):
             return theme.variables
         return {}
 
-    def update_search_view(self):
-        node = self._search.current_node
-        self.status_bar.search_progress = (
-            self._search.index,
-            len(self._search.matches),
-        )
-
+    def jump_to_node(self, node):
+        """Move the tree cursor to `node` and hand focus back to the tree.
+        Shared by the sidebar's Enter-to-jump handler across all panels."""
+        if node is None:
+            return
         self.note_tree_widget.update_location(context_node=node.parent, line_node=node)
-        self.info_sidebar.update_search_highlight(self._search.index)
+        self.note_tree_widget.focus()
+
+    def accept_search(self, node):
+        """Enter on a search result: commit to it and leave search mode."""
+        self.status_bar.search_mode = False
+        self._search.clear()
+        self.info_sidebar.hide_search_results()
+        if node is not None:
+            self.note_tree_widget.update_location(
+                context_node=node.parent, line_node=node
+            )
+        self.note_tree_widget.focus()
+
+    def cancel_search(self):
+        """Escape in search mode: restore the pre-search position."""
+        self.status_bar.search_mode = False
+        pos = self._search.pre_search_position
+        self._search.clear()
+        self.info_sidebar.hide_search_results()
+        if pos and pos[0] is not None:
+            self.note_tree_widget.update_location(context_node=pos[0], line_node=pos[1])
+        self.note_tree_widget.focus()
+
+    def hide_sidebar_focus_tree(self):
+        """Escape in a non-search panel: hide the sidebar and doodle pane,
+        refocus the tree."""
+        self.info_sidebar.mode_index = 0
+        self.info_sidebar.update_data()
+        self.doodle_pane.set_visible(False)
+        self.note_tree_widget.focus()
 
     def action_edit_note(self):
         # if the input widget already in use, stop
@@ -324,14 +349,31 @@ class ForestApp(App):
         self.input_widget.placeholder = ""
         self.input_widget.focus()
         self.input_widget.border_title = "Editing..."
+        self.input_widget.border_subtitle = f" {compose_clock_notify_contents()[0]} "
+        # The expiring/archived panel is command-mode only.
+        self.command_info_panel.display = False
 
     def action_cycle_side_panel(self):
         logging.info("action_cycle_side_panel called")
-        self.info_sidebar.cycle_mode()
+        sidebar = self.info_sidebar
+        if sidebar.is_open and self.focused is not sidebar:
+            # Visible but the cursor is elsewhere: `` ` `` first hands focus back
+            # to the panel without advancing the mode.
+            sidebar.focus()
+            return
+        # Hidden -> reveal first mode; already focused -> rotate to the next
+        # mode (which may hide the panel and return focus to the tree). The
+        # doodle pane is revealed/hidden together with the sidebar.
+        sidebar.cycle_mode()
+        self.doodle_pane.set_visible(sidebar.is_open)
+        if sidebar.is_open:
+            sidebar.focus()
+        else:
+            self.note_tree_widget.focus()
 
     def _copied_refresh_sidebar(self) -> None:
         sidebar = getattr(self, "info_sidebar", None)
-        if sidebar is None or not sidebar.display or sidebar._search_results:
+        if sidebar is None or not sidebar.is_open or sidebar._search_results:
             return
         sidebar.update_data()
 
@@ -346,49 +388,24 @@ class ForestApp(App):
         self.status_bar.needs_saving = True
         self._copied_refresh_sidebar()
 
-    def _copied_prune(self) -> bool:
+    def copied_move(self, node, up: bool) -> None:
+        # Reorder a copied note within the non-bookmarked tail. The sidebar
+        # renders copied_nodes reversed, so moving "up" (toward the paste-target
+        # top) means a higher list index. Bookmarked copies stay slot-ordered
+        # at the start of the list and aren't manually movable.
         nodes = self.note_tree.copied_nodes
-        live_ids = {
-            id(n) for n in self.note_tree.root.get_node_list(only_visible=False)
-        }
-        nodes[:] = [n for n in nodes if id(n) in live_ids]
-        return bool(nodes)
-
-    def _copied_rotate(self) -> None:
-        # Only rotate the non-bookmarked tail; bookmarked nodes stay pinned
-        # at the start of the list (= bottom of sidebar) in their order.
-        nodes = self.note_tree.copied_nodes
-        k = self.note_tree.bookmark_split_index()
-        tail = nodes[k:]
-        if len(tail) <= 1:
+        if node not in nodes:
             return
-        nodes[k:] = [tail[-1]] + tail[:-1]
+        k = self.note_tree.bookmark_split_index()
+        i = nodes.index(node)
+        if i < k:
+            return
+        j = i + 1 if up else i - 1
+        if j < k or j >= len(nodes):
+            return
+        nodes[i], nodes[j] = nodes[j], nodes[i]
         self.note_tree.has_unsaved_operations = True
         self.status_bar.needs_saving = True
-
-    def copied_jump_to_next(self) -> None:
-        if not self.note_tree.copied_nodes:
-            self.notify("No copied notes.")
-            return
-        if not self._copied_prune():
-            self._copied_refresh_sidebar()
-            return
-        target = self.note_tree.copied_nodes[-1]
-        self._copied_rotate()
-        self.note_tree_widget.update_location(
-            context_node=target.parent if target.parent else target,
-            line_node=target,
-        )
-        self._copied_refresh_sidebar()
-
-    def copied_cycle_target(self) -> None:
-        if not self.note_tree.copied_nodes:
-            self.notify("No copied notes.")
-            return
-        if not self._copied_prune():
-            self._copied_refresh_sidebar()
-            return
-        self._copied_rotate()
         self._copied_refresh_sidebar()
 
     def _toggle_archive_tag(self, node, add: bool) -> bool:
@@ -495,21 +512,18 @@ class ForestApp(App):
             cursor_node_obj,
         )
         self.info_sidebar.show_search_results(matching_nodes, display_query)
-        self.update_search_view()
+        self._pending_sidebar_focus = True
 
     def _cmd_help(self, cmd_str, args_str):
         self.info_sidebar.show_help()
+        self._pending_sidebar_focus = True
 
     def _cmd_doodle(self, cmd_str, args_str):
         sub = args_str.strip()
         if sub == "clear":
             self.doodle_pane.clear_current()
-        elif sub == "show":
-            self.doodle_pane.set_visible(True)
-        elif sub == "hide":
-            self.doodle_pane.set_visible(False)
         else:
-            self.notify("Usage: doodle show|hide|clear")
+            self.notify("Usage: doodle clear")
 
     def _cmd_run(self, cmd_str, args_str):
         index = 0
@@ -736,7 +750,15 @@ class ForestApp(App):
 
         self.input_widget.value = ""
         self.input_widget.display = False
-        self.note_tree_widget.focus()
+        self.command_info_panel.display = False
+        # A search/help command opens the sidebar and wants keyboard focus so
+        # arrows navigate its entries; everything else keeps focus on the tree.
+        if getattr(self, "_pending_sidebar_focus", False) and self.info_sidebar.is_open:
+            self.info_sidebar.focus()
+            self._pending_sidebar_focus = False
+        else:
+            self._pending_sidebar_focus = False
+            self.note_tree_widget.focus()
 
     def action_command_mode(self):
         # if the input widget already in use, stop
@@ -751,6 +773,13 @@ class ForestApp(App):
         self.input_widget.placeholder = self.command_suggester.placeholder
         self.input_widget.focus()
         self.input_widget.border_title = None  # "Command mode"
+        self.input_widget.border_subtitle = f" {compose_clock_notify_contents()[0]} "
+
+        # Expiring / archived-in-context reference, shown only in command mode.
+        if self.command_info_panel.refresh_content():
+            self.command_info_panel.display = True
+        else:
+            self.command_info_panel.display = False
 
     def in_search_mode(self) -> bool:
         return self._search.active
@@ -771,6 +800,7 @@ class ForestApp(App):
             self.reset_history_index()
             self.input_widget.value = ""
             self.input_widget.display = False
+            self.command_info_panel.display = False
             self.note_tree_widget.focus()
         elif (
             self.input_widget.display
@@ -792,34 +822,6 @@ class ForestApp(App):
             elif event.key == "shift+tab":
                 self.note_tree_widget.action_deindent()
                 self.input_widget.focus()
-        elif self._search.active:
-            if event.key == "up":
-                event.prevent_default()
-                event.stop()
-                self._search.cycle(-1)
-                self.update_search_view()
-            elif event.key == "down":
-                event.prevent_default()
-                event.stop()
-                self._search.cycle(1)
-                self.update_search_view()
-            elif event.key == "c":
-                event.prevent_default()
-                event.stop()
-                node = self._search.current_node
-                if node is not None and node.parent is not None:
-                    self.copied_toggle(node)
-                    self.info_sidebar.update_search_highlight(self._search.index)
-                    self.note_tree_widget.render()
-            elif event.key in ["enter", "escape"]:
-                self.status_bar.search_mode = False
-                if event.key == "escape":
-                    self.note_tree_widget.update_location(
-                        context_node=self._search.pre_search_position[0],
-                        line_node=self._search.pre_search_position[1],
-                    )
-                self._search.clear()
-                self.info_sidebar.hide_search_results()
         elif event.key == "enter" and not self.input_widget.display:
             self.note_tree_widget.action_add_note()
         elif event.key in "0123456789":

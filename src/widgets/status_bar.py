@@ -24,7 +24,7 @@ class StatusBar(Static):
     has_sticky_recovery = reactive(False)
     show_renew_hint = reactive(False)
 
-    def compose_content(self):
+    def render(self):
 
         hl = self.app.theme_variables["secondary"]
         progress_text = Text.from_markup(
@@ -132,22 +132,4 @@ class StatusBar(Static):
                     fill_color = panel.blend(fg, 0.075).hex
                     text.stylize(Style(bgcolor=fill_color), 0, filled_cells)
 
-        self.update(content=text)
-
-    def on_resize(self, event) -> None:
-        self.compose_content()
-
-
-for _attr in (
-    "progress",
-    "context_node",
-    "needs_saving",
-    "hide_done",
-    "hide_archive",
-    "search_mode",
-    "search_progress",
-    "timer_remaining",
-    "has_sticky_recovery",
-    "show_renew_hint",
-):
-    setattr(StatusBar, f"watch_{_attr}", lambda self, _value: self.compose_content())
+        return text

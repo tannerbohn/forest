@@ -85,9 +85,7 @@ class NoteTreeWidget(ScrollView):
         Binding("z", "undo()", "Undo", show=False),
         Binding("Z", "redo()", "Redo", show=False),
         Binding("c", "toggle_copy()", "Copy", show=True),
-        Binding("C", "cycle_copy()", "Cycle copy target", show=False),
         Binding("v", "paste_node()", "Paste", show=False),
-        Binding("V", "jump_to_copy()", "Move to next copied note", show=False),
         Binding("l", "paste_link()", "Paste link to copied note", show=False),
         Binding("y", "yank_node()", "Yank to clipboard", show=False),
         Binding("Y", "yank_subtree()", "Yank subtree to clipboard", show=False),
@@ -559,9 +557,6 @@ class NoteTreeWidget(ScrollView):
             self.render()
             self._fix_cursor_position(node)
 
-    def action_jump_to_copy(self):
-        self.app.copied_jump_to_next()
-
     def action_yank_node(self):
         node = self.cursor_node
         if not node:
@@ -583,9 +578,6 @@ class NoteTreeWidget(ScrollView):
             )
         else:
             self.app.notify("Failed to copy to clipboard")
-
-    def action_cycle_copy(self):
-        self.app.copied_cycle_target()
 
     def action_paste_node(self):
         node = self.cursor_node
@@ -609,7 +601,7 @@ class NoteTreeWidget(ScrollView):
         self.note_tree.has_unsaved_operations = True
         self.note_tree.copied_nodes.pop()
         self.note_tree.remove_bookmark_for(source)
-        if self.app.info_sidebar.display:
+        if self.app.info_sidebar.is_open:
             self.app.info_sidebar.update_data()
         self.render()
         self._fix_cursor_position(source)
@@ -643,7 +635,7 @@ class NoteTreeWidget(ScrollView):
         self.note_tree.has_unsaved_operations = True
         popped = self.note_tree.copied_nodes.pop()
         self.note_tree.remove_bookmark_for(popped)
-        if self.app.info_sidebar.display:
+        if self.app.info_sidebar.is_open:
             self.app.info_sidebar.update_data()
         self.render()
         self._fix_cursor_position(new_node)
@@ -682,11 +674,6 @@ class NoteTreeWidget(ScrollView):
         if any(r.node.expiry_datetime is not None for r in self.rows):
             self._line_cache.clear()
             self.refresh()
-        # Keep the Expiring section current (new/expired notes and drifting
-        # labels), but only when it's the live view (never clobber search/help).
-        # Hand it the list we already walked to avoid a second walk.
-        if self.app.info_sidebar.is_showing_bookmarks():
-            self.app.info_sidebar.update_data(timer_nodes=timer_nodes)
 
     def on_resize(self, event) -> None:
         self.render()
@@ -855,7 +842,7 @@ class NoteTreeWidget(ScrollView):
         if not node or not node.parent:
             return
         self.note_tree.assign_bookmark(node, slot)
-        if self.app.info_sidebar.display:
+        if self.app.info_sidebar.is_open:
             self.app.info_sidebar.update_data()
         if not self._restyle_node(node):
             self.render()

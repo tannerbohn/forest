@@ -1,73 +1,216 @@
 import logging
 import re
 import textwrap
-from datetime import datetime
 
 from rich.text import Text
 from textual.color import Color
-from textual.widgets import DataTable
+from textual.widgets import OptionList
+from textual.widgets.option_list import Option
 
-from utils import compose_clock_notify_contents
 
-
-class InfoSidebar(DataTable):
+class InfoSidebar(OptionList):
     DEFAULT_CSS = """
     InfoSidebar {
         height: 100%;
         color: $foreground 50%;
         background-tint: $panel 10%;
-        display: none;
+        width: 0;
+        visibility: hidden;
         layer: overlay;
         offset: 0 1;
+        scrollbar-size: 0 0;
+        padding: 0 1;
+        border: none;
+    }
+    InfoSidebar:focus {
+        border: none;
     }
     """
 
+    _panel_width = None
+
     mode_index = 0
     mode_options = [None, "bookmarks", "perpetual_journal"]
+    # The panel stays in the layout at a constant width at all times and
+    # opens/closes by toggling `visibility`. A constant-width widget is laid out
+    # on every frame, so its overlay region always exists and revealing it
+    # composites on the first frame — unlike a display:none -> block transition,
+    # whose overlay region is only created during the ensuing layout (missing the
+    # first frame), and unlike a 0 -> N width change, which forces the OptionList
+    # to rebuild its lines from a zero-width state.
+    _open = False
     _search_results = []  # list of match nodes when search panel is shown
-    _search_highlight_index = 0
     _pre_search_mode_index = 0  # panel mode to restore after search exits
-    _pending_timer_nodes = None  # precomputed #T- list passed from the tick
 
     def on_mount(self):
-        """Initialize the DataTable with columns to prevent first-render issues."""
-        self.add_columns("", "")
-        self.show_header = True
-        self.set_interval(5, self._refresh_clock_row)
+        self._option_nodes = {}  # option id -> Node (selectable entries only)
+        self._opt_counter = 0
+        self._search_entry_ids = []  # option ids of search results, in order
 
-    def _refresh_clock_row(self):
-        """Update the clock row in place so it stays current while the sidebar is open."""
-        if not self.display or self.row_count == 0:
-            return
-        title, body = compose_clock_notify_contents()
-        clock_text = Text.from_markup(f"[italic]{title}[dim] - {body}[/dim][/italic]")
-        try:
-            self.update_cell_at((0, 1), clock_text)
-        except Exception:
-            pass
+    # --------------------------------------------------------------- layout
 
     def apply_layout(self, side: str, width: int):
+        self._panel_width = width
+        self._side = side
         self.styles.dock = side
-        self.styles.width = width
-        panel = Color.parse(self.app.theme_variables.get("panel", "#000000"))
-        # bg = Color.parse(self.app.theme_variables.get("background", "#ffffff"))
-        blended = panel  # .blend(bg, 0.5).hex
-        border = ("vkey", blended)
-        no_border = ("none", blended)
-        if side == "right":
+        self._sync_visibility()
+
+    # --------------------------------------------------------- open / close
+
+    @property
+    def is_open(self) -> bool:
+        """Whether the panel is currently shown. Replaces the old `display`
+        flag; visibility is driven by the `visibility` style, not width."""
+        return self._open
+
+    def _sync_visibility(self) -> None:
+        # The panel keeps its real width at all times; `visibility` is the
+        # open/closed switch. `hidden` paints nothing (border, padding, and
+        # background-tint included), so no strip lingers when closed.
+        if self._panel_width:
+            self.styles.width = self._panel_width
+        if self._open:
+            self.styles.visibility = "visible"
+            self._apply_border()
+        else:
+            self.styles.visibility = "hidden"
+
+    def open_panel(self) -> None:
+        self._open = True
+        self._sync_visibility()
+
+    def close_panel(self) -> None:
+        self._open = False
+        self._sync_visibility()
+
+    def _apply_border(self, focused: bool | None = None):
+        # Draw only the divider edge (the side facing the center of the screen),
+        # in HL1 while focused and the panel color otherwise. Set all four edges
+        # inline (inline styles beat the OptionList :focus rule that would
+        # otherwise re-add a full `tall` border on focus).
+        if focused is None:
+            focused = self.has_focus
+        tv = self.app.theme_variables
+        panel = Color.parse(tv.get("panel", "#000000"))
+        active_color = Color.parse(tv.get("HL1", "#ffffff")) if focused else panel
+        border = ("vkey", active_color)
+        no_border = ("none", panel)
+        self.styles.border_top = no_border
+        self.styles.border_bottom = no_border
+        if getattr(self, "_side", "right") == "right":
             self.styles.border_left = border
             self.styles.border_right = no_border
         else:
             self.styles.border_right = border
             self.styles.border_left = no_border
 
+    def _content_width(self) -> int:
+        # The panel is always laid out at its real width (only `visibility`
+        # toggles), so content_size is reliable here.
+        w = self.content_size.width or self._panel_width or 30
+        return max(w, 16)
+
+    # ------------------------------------------------------- option helpers
+
+    def _register(self, prompt, node) -> Option:
+        """Selectable entry carrying a node (resolved on select/highlight)."""
+        tok = f"opt{self._opt_counter}"
+        self._opt_counter += 1
+        self._option_nodes[tok] = node
+        return Option(prompt, id=tok)
+
+    def _header(self, markup: str) -> Option:
+        return Option(Text.from_markup(f"[b]{markup}[/b]"), disabled=True)
+
+    def _blank(self) -> Option:
+        return Option("", disabled=True)
+
+    def _ellipsize(self, s: str, width: int) -> str:
+        if len(s) > width:
+            return s[: max(width - 1, 0)].rstrip() + "…"
+        return s
+
+    def _line(self, marker: Text, body: str, width: int, body_style=None) -> Text:
+        """Single-line prompt: `marker` inline + `body` collapsed to one line and
+        truncated with an ellipsis. (OptionList soft-wraps and ignores Rich's
+        overflow, so the one-line cap has to be applied here.)"""
+        marker_len = marker.cell_len
+        avail = max(width - marker_len - 1, 6)
+        line = self._ellipsize(" ".join(body.split()), avail)
+        t = Text()
+        t.append_text(marker)
+        if marker_len:
+            t.append(" ")
+        t.append(line, style=body_style or "")
+        return t
+
+    def _wrapped(
+        self, marker: Text, body: str, width: int, max_lines: int, body_style=None
+    ) -> Text:
+        """`marker` inline on line 1, `body` wrapped to at most `max_lines`
+        (over-long text ellipsised). Short bodies use fewer lines. Wrapped lines
+        carry a small hanging indent, not a marker-width column."""
+        marker_len = marker.cell_len
+        init = " " * (marker_len + 1)
+        sub = "  "
+        body = " ".join(body.split())
+        wrapped = textwrap.wrap(
+            body,
+            max(width, marker_len + 6),
+            initial_indent=init,
+            subsequent_indent=sub,
+        ) or [init]
+        shown = wrapped[:max_lines]
+        if len(wrapped) > max_lines:
+            shown[-1] = self._ellipsize(shown[-1] + " …", width)
+        t = Text()
+        t.append_text(marker)
+        t.append(" ")
+        t.append(shown[0][len(init) :], style=body_style or "")
+        for line in shown[1:]:
+            t.append("\n")
+            t.append(line, style=body_style or "")
+        return t
+
+    def _entry(
+        self, marker: Text, body: str, node, width, body_style=None, max_lines=1
+    ) -> Option:
+        """Selectable bookmark/journal/search entry carrying `node`. Renders on
+        one line by default; `max_lines` > 1 wraps up to that many lines."""
+        if max_lines <= 1:
+            prompt = self._line(marker, body, width, body_style)
+        else:
+            prompt = self._wrapped(marker, body, width, max_lines, body_style)
+        return self._register(prompt, node)
+
+    # --------------------------------------------------------------- render
+
+    def _render_options(self, options, highlight=None):
+        self.clear_options()
+        self.add_options(options)
+        if highlight is not None and 0 <= highlight < self.option_count:
+            try:
+                self.highlighted = highlight
+            except Exception:
+                pass
+        # Outside search, only show the cursor when the panel has focus — a
+        # lingering blurred highlight (e.g. after a rebuild while the cursor is
+        # on the tree) is just visual noise.
+        if not self._search_results and not self.has_focus:
+            self.highlighted = None
+        self.refresh()
+
+    def _first_entry_index(self, options):
+        for i, opt in enumerate(options):
+            if not opt.disabled:
+                return i
+        return None
+
+    # ---------------------------------------------------------------- modes
+
     def is_showing_bookmarks(self) -> bool:
-        """True when the bookmarks panel (copied stack + Expiring section) is the
-        live view. Used to gate mutation/timer-driven refreshes so they update
-        that panel in place without clobbering a transient search/help overlay
-        (which reuse the widget with display=True but their own contents)."""
         return (
-            self.display
+            self._open
             and not self._search_results
             and self.mode_options[self.mode_index] == "bookmarks"
         )
@@ -80,373 +223,367 @@ class InfoSidebar(DataTable):
         )
         self.update_data()
 
-    def _collect_archived_roots(self):
-        """Archived branch roots inside the current context."""
-        ctx = self.app.note_tree.context_node
-        nodes = ctx.get_node_list(only_visible=False, hide_archive=False)
-        return [
-            n
-            for n in nodes
-            if "#ARCHIVE" in n.text
-            and n.parent is not None
-            and "#ARCHIVE" not in n.parent.text
-        ]
-
-    def _clock_rows(self):
-        """Return dim clock/date rows for appending to any panel."""
-        title, body = compose_clock_notify_contents()
-        hl = self.app.theme_variables["HL1"]
-        rows = [
-            [
-                "",
-                Text.from_markup(f"[italic]{title}[dim] - {body}[/dim][/italic]"),
-            ],
-            ["", ""],
-        ]
-        # for line in body.split("\n"):
-        #     rows.append(["", Text.from_markup(f"[dim]{line}[/dim]")])
-        return rows
-
-    def show_help(self):
-        """Display help information without adding to the cycle."""
-        logging.info("show_help called")
-        self._search_results = []
-        # Set mode_index to last position so next cycle wraps to 0 (None/hidden)
-        self.mode_index = len(self.mode_options) - 1
-        self.display = True
-        self.show_header = False
-
-        table_rows = self._clock_rows()
-
-        # remember to keep ForestApp.on_key up-to-date
-        table_rows.extend(
-            [
-                ["", Text.from_markup("[b]Forest Help[/b]")],
-                ["", Text.from_markup("[dim](Press ` to hide)[/dim]")],
-                ["", ""],
-                ["", Text.from_markup("[b]Navigation[/b]")],
-                ["←/→", "Zoom out/in"],
-                ["space", "Toggle collapse"],
-                ["0-9", "Jump to bookmarked copy"],
-                ["S-0..9", "Assign bookmark # to copied note"],
-                ["", ""],
-                ["", Text.from_markup("[b]Editing[/b]")],
-                ["bksp", "Edit note"],
-                ["enter", "Add new note"],
-                ["delete", "Delete note"],
-                ["u/d", "Move note up/down"],
-                ["tab/S-tab", "Indent/deindent"],
-                ["h", "Cycle highlight"],
-                ["x", "Toggle #DONE"],
-                ["X", "Toggle hiding #DONE notes"],
-                ["c", "Copy (press again to uncopy)"],
-                ["C", "Cycle paste target (rotates list)"],
-                ["v", "Paste top of copied list after cursor"],
-                ["V", "Move to next copied note (rotates list)"],
-                ["l", "Paste [[path]] link to top of copied list"],
-                ["y", "Yank note text to system clipboard"],
-                ["Y", "Yank note + subtree to system clipboard"],
-                ["z/Z", "Undo/redo"],
-                ["", ""],
-                ["", Text.from_markup("[b]Commands[/b]")],
-                [":", "Command mode"],
-                [":j+ <text>", "Add journal entry"],
-                [":collapse", "Collapse all nodes in context"],
-                [":? <query regex>", "Search in context"],
-                [":?*/?? <query regex>", "Search globally"],
-                ["", "(empty query to find similar)"],
-                [":sn [filter]", "Sticky notes (context)"],
-                [":sn* [filter]", "Sticky notes (global)"],
-                [":snr", "Recover last sticky board"],
-                [":random", "Jump to random note (context)"],
-                [":random*", "Jump to random note (global)"],
-                [":insert <name>", "Insert template"],
-                [":run [<idx>]", "Run ! cmd or follow [[PATH]]"],
-                [":archive set/unset", "Mark/unmark cursor as #ARCHIVE"],
-                [":archive show/hide", "Reveal/hide archived nodes"],
-                [":help", "Show this help"],
-                ["", ""],
-                ["", Text.from_markup("[b]Other[/b]")],
-                ["s", "Save"],
-                ["`", "Cycle side panel"],
-            ]
-        )
-
-        self._render_rows(table_rows)
-
-    def show_search_results(self, matches, query="", current_index=0):
-        """Display search results in panel with current match highlighted."""
-        logging.info(
-            f"show_search_results called with {len(matches)} matches, query={query!r}"
-        )
-        self._pre_search_mode_index = self.mode_index
-        self._search_results = matches
-        self._search_highlight_index = current_index
-        self.display = True
-        self.show_header = False
-
-        self._render_search_rows(query)
-
-    def update_search_highlight(self, new_index):
-        """Update which row is highlighted in the search results panel."""
-        if not self._search_results:
-            return
-        self._search_highlight_index = new_index % len(self._search_results)
-        # Re-render the table with updated highlight
-        query = getattr(self, "_last_search_query", "")
-        self._render_search_rows(query)
-
-    def _render_search_rows(self, query=""):
-        """Render search results table rows with highlight on current index."""
-        self._last_search_query = query
-        matches = self._search_results
-        width = min(self.app.size.width // 2, 60)
-
-        table_rows = self._clock_rows()
-
-        # Track which DataTable row index corresponds to the highlighted match
-        highlight_row = None
-
-        copied_nodes = self.app.note_tree.copied_nodes
-        hl1 = self.app.theme_variables.get("HL1", "white")
-
-        for idx, match_node in enumerate(matches):
-            is_current = idx == self._search_highlight_index
-            is_copied = match_node in copied_nodes
-
-            node_text = self._truncate(match_node.text, width)
-
-            if is_current:
-                marker = Text.from_markup("❯")
-            elif is_copied:
-                marker = Text.from_markup(f"[{hl1}]•[/{hl1}]")
-            else:
-                marker = Text.from_markup("[dim]›[/dim]")
-            if is_current:
-                styled_text = Text.from_markup(f"[reverse]{node_text}[/reverse]")
-            else:
-                styled_text = Text.from_markup(f"{node_text}")
-
-            # For local search, drop the path up through the context node so
-            # only the in-context ancestors show. For global, drop just root.
-            search = getattr(self.app, "_search", None)
-            if (
-                search
-                and getattr(search, "is_local", False)
-                and search.context_node is not None
-            ):
-                skip = search.context_node.depth + 1
-            else:
-                skip = 1
-            path_parts = match_node.get_path(include_self=False)[skip:]
-            if path_parts:
-                path_preview = self._truncate(" › ".join(path_parts[:3]), width)
-                table_rows.append(["", Text.from_markup(f"[dim]{path_preview}[/dim]")])
-
-            if is_current:
-                highlight_row = len(table_rows)
-            table_rows.append([marker, styled_text])
-
-            table_rows.append(["", ""])
-
-        if not matches:
-            table_rows.append(["", "No results found"])
-
-        # Compute desired scroll position before clearing/rebuilding so we
-        # can apply it in the same paint as the rebuild — avoids a flash at
-        # scroll_y=0 followed by a jump to the highlight.
-        target_scroll_y = None
-        if highlight_row is not None:
-            last_row = len(table_rows) - 1
-            trailing = min(highlight_row + 1, last_row)
-            header_offset = 1 if self.show_header else 0
-            viewport_h = max(1, self.size.height - header_offset)
-            cur_y = self.scroll_y
-            if trailing >= cur_y + viewport_h:
-                target_scroll_y = trailing - viewport_h + 1
-            elif highlight_row < cur_y:
-                target_scroll_y = highlight_row
-            else:
-                target_scroll_y = cur_y
-
-        self._render_rows(table_rows, scroll_y=target_scroll_y)
-
-        if highlight_row is not None:
-            try:
-                self.move_cursor(row=highlight_row, animate=False, scroll=False)
-            except Exception:
-                pass
-
-    def hide_search_results(self):
-        """Clear search results and restore previous panel mode."""
-        self._search_results = []
-        self._search_highlight_index = 0
-        self.mode_index = self._pre_search_mode_index
-        self.update_data()
-
-    def _render_rows(self, rows, scroll_y=None):
-        self.clear(columns=True)
-        self.add_columns("", "")
-        self.add_rows(rows)
-        if scroll_y is not None:
-            try:
-                self.scroll_to(y=scroll_y, animate=False, force=True)
-            except Exception:
-                pass
-        self.refresh()
-
-    def _truncate(self, text, width):
-        max_text_width = max(width - 6, 10)
-        if len(text) > max_text_width:
-            return text[: max_text_width - 1] + "…"
-        return text
-
     def _build_bookmark_rows(self, width):
-        rows = [
-            ["", Text.from_markup("[b]Copied Stack[/b]")],
-            ["", ""],
-        ]
+        options = [self._header("Quick Links"), self._blank()]
         copied_nodes = self.app.note_tree.copied_nodes
         if copied_nodes:
-            hl1 = self.app.theme_variables.get("HL1", "white")
+            added_first_slot = False
             for i, node in enumerate(copied_nodes[::-1]):
-                text = self._truncate(node.text, width)
                 slot = self.app.note_tree.get_bookmark_slot(node)
                 if slot is not None:
                     base = " vl" if i == 0 else ""
                     marker_inner = f"[b]{slot}[/b]{base}"
+                    if not added_first_slot:
+                        options.append(self._blank())
+                        added_first_slot = True
                 else:
                     marker_inner = "vl" if i == 0 else "•"
-                rows.append(
-                    [
-                        Text.from_markup(f"[dim][{hl1}]{marker_inner}[/{hl1}][/dim]"),
-                        Text.from_markup(text),
-                    ]
-                )
-            rows.extend(
+                marker = Text.from_markup(f"[dim]{marker_inner}[/dim]")
+                options.append(self._entry(marker, node.text, node, width))
+
+            options.extend(
                 [
-                    ["", Text.from_markup("[dim]\\[c]opy \\[v]paste \\[l]ink[/dim]")],
-                    ["", Text.from_markup("[dim]\\[C]ycle \\[V]isit \\[#]jump[/dim]")],
-                    ["", Text.from_markup("[dim]\\[S-#]bookmark[/dim]")],
+                    self._blank(),
+                    Option(
+                        Text.from_markup("[dim]\\[c]opy \\[v]paste \\[l]ink[/dim]"),
+                        disabled=True,
+                    ),
+                    Option(
+                        Text.from_markup(
+                            "[dim]\\[u/d]move \\[#]jump \\[S-#]bookmark[/dim]"
+                        ),
+                        disabled=True,
+                    ),
                 ]
             )
 
-        rows.extend(self._build_expiring_rows(width))
-
-        archived_roots = self._collect_archived_roots()
-        if archived_roots:
-            rows.extend(
-                [
-                    ["", ""],
-                    ["", Text.from_markup("[b]Archived[/b]")],
-                    ["", ""],
-                ]
-            )
-            for node in archived_roots:
-                text = self._truncate(node.text.replace("#ARCHIVE", "").strip(), width)
-                rows.append(["", Text.from_markup(f"[dim]{text}[/dim]")])
-        return rows
-
-    def _build_expiring_rows(self, width):
-        """Rows listing notes that own a #T- timer, soonest expiry first.
-        Expired notes render dim red; still-counting notes render plain to
-        keep visual noise down. Reuses the timer-node list a caller (the expiry
-        tick) already walked when available, else walks the tree itself."""
-        nodes = self._pending_timer_nodes
-        if nodes is None:
-            nodes = self.app.note_tree.iter_timer_nodes()
-        timer_nodes = sorted(nodes, key=lambda n: n.expiry_datetime)
-        if not timer_nodes:
-            return []
-
-        red = self.app.theme_variables.get("HL3", "red")
-        rows = [
-            ["", ""],
-            ["", Text.from_markup("[b]Expiring[/b]")],
-            ["", ""],
-        ]
-        for node in timer_nodes:
-            expired, label = node.expiry_status()
-            loop = "↺" if node.expiry_recurring else ""
-            text = self._truncate(node.get_text(), width)
-            if expired:
-                marker = Text.from_markup(f"[dim {red}]+{label}{loop}[/dim {red}]")
-                body = Text.from_markup(f"[dim {red}]{text}[/dim {red}]")
-            else:
-                marker = Text.from_markup(f"[dim]{label}{loop}[/dim]")
-                body = Text.from_markup(text)
-            rows.append([marker, body])
-        return rows
+        return options
 
     def _build_perpetual_journal_rows(self, width):
         from datetime import date as _date
 
-        before, after = 7, 14
+        before, after = 3, 7
         node_matches = self.app.note_tree.get_journal_entries_in_day_radius(
             before, after
         )
-        today_year = _date.today().strftime("%Y")
+        today_ymd = _date.today().strftime("%Y-%m-%d")
         today_md = _date.today().strftime("%m-%d")
         hl1 = self.app.theme_variables.get("HL1", "white")
         strip_re = r"\[\d{4}-\d{2}-\d{2}.*?\]\s*"
-        today_marker = [
-            Text.from_markup(f"[{hl1}]{today_year}-{today_md}[/{hl1}]"),
-            Text.from_markup("Today"),
-        ]
 
-        rows = [
-            ["", Text.from_markup(f"[b]-{before} / +{after} days[/b]")],
-            ["", ""],
-            ["Date", "Entry"],
-        ]
+        options = [self._header(f"-{before} / +{after} days"), self._blank()]
+
         today_inserted = any(match_str[5:] == today_md for _, match_str in node_matches)
         today_row_added = False
+
+        def today_marker_option():
+            return Option(
+                Text.from_markup(f"[{hl1}]{today_ymd} Today[/{hl1}]"), disabled=True
+            )
+
         for node, match_str in node_matches:
             entry_md = match_str[5:]  # MM-DD from YYYY-MM-DD
             if not today_inserted and not today_row_added and entry_md > today_md:
-                rows.append(today_marker)
+                options.append(today_marker_option())
+                options.append(self._blank())
                 today_row_added = True
-            text = node.text if node else ""
-            text = re.sub(strip_re, "", text).strip()
-            lines = textwrap.wrap(text, width - 16)
+            text = re.sub(strip_re, "", node.text if node else "").strip()
             is_today = entry_md == today_md
-            for i_l, line in enumerate(lines):
-                if is_today:
-                    date_cell = (
-                        Text.from_markup(f"[{hl1}]{match_str}[/{hl1}]")
-                        if i_l == 0
-                        else ""
-                    )
-                    rows.append([date_cell, Text.from_markup(f"{line}")])
-                else:
-                    rows.append([match_str if i_l == 0 else "", line])
+            date_style = hl1 if is_today else "dim"
+            # Full YYYY-MM-DD, inline (not a column); its styling marks the
+            # entry boundary. Journal entries are prose — allow up to 3 lines.
+            marker = Text.from_markup(f"[{date_style}]{match_str}[/{date_style}]")
+            options.append(self._entry(marker, text, node, width, max_lines=3))
+            options.append(self._blank())
+
         if not today_inserted and not today_row_added:
-            rows.append(today_marker)
-        return rows
+            options.append(today_marker_option())
+        return options
 
     _ROW_BUILDERS = {
         "bookmarks": _build_bookmark_rows,
         "perpetual_journal": _build_perpetual_journal_rows,
     }
 
-    def update_data(self, timer_nodes=None):
-        # timer_nodes: an already-walked list of #T- owners (from the expiry
-        # tick) that _build_expiring_rows can reuse instead of walking again.
-        self._pending_timer_nodes = timer_nodes
+    def update_data(self):
+        # Remember which node the cursor is on so an in-place refresh keeps the
+        # cursor put rather than snapping back to the top. On a genuine mode
+        # change the node won't exist in the new options and we fall back to the
+        # first entry.
+        prev_node = self._current_node()
         self._search_results = []
+        self._search_entry_ids = []
+        self._option_nodes = {}
+        self._opt_counter = 0
         mode = self.mode_options[self.mode_index]
         if mode is None:
-            self.clear(columns=True)
-            self.display = False
+            self.clear_options()
+            self.close_panel()
             self.refresh()
-            self._pending_timer_nodes = None
             return
-        self.display = True
-        self.show_header = False
-        width = min(self.app.size.width // 2, 60)
-        rows = self._clock_rows()
+        self.open_panel()
+        width = self._content_width()
+        options = []
         builder = self._ROW_BUILDERS.get(mode)
         if builder is not None:
-            rows.extend(builder(self, width))
-        self._render_rows(rows)
-        self._pending_timer_nodes = None
+            options.extend(builder(self, width))
+        hi = self._index_of_node(options, prev_node)
+        if hi is None:
+            hi = self._first_entry_index(options)
+        self._render_options(options, highlight=hi)
+
+    def _index_of_node(self, options, node):
+        if node is None:
+            return None
+        for i, opt in enumerate(options):
+            if opt.id and self._option_nodes.get(opt.id) is node:
+                return i
+        return None
+
+    # ----------------------------------------------------------------- help
+
+    def show_help(self):
+        logging.info("show_help called")
+        self._search_results = []
+        self._search_entry_ids = []
+        self._option_nodes = {}
+        self._opt_counter = 0
+        # Set mode_index to last position so next cycle wraps to 0 (None/hidden)
+        self.mode_index = len(self.mode_options) - 1
+        self.open_panel()
+
+        # Help lines are enabled (node=None) so arrow keys scroll the panel;
+        # selecting one is a no-op. `right` is rendered as plain text (never
+        # markup) so bracketed help like [[PATH]] or [c]opy doesn't misparse.
+        def line(left, right=""):
+            if right:
+                text = Text()
+                text.append(left, style="dim")
+                text.append("  ")
+                text.append(right)
+            else:
+                text = Text.from_markup(left)
+            return self._register(text, None)
+
+        options = []
+        # remember to keep ForestApp.on_key up-to-date
+        options.extend(
+            [
+                line("[b]Forest Help[/b]"),
+                line("[dim](Press ` to hide)[/dim]"),
+                self._blank(),
+                line("[b]Navigation[/b]"),
+                line("←/→", "Zoom out/in"),
+                line("space", "Toggle collapse"),
+                line("0-9", "Jump to bookmarked copy"),
+                line("S-0..9", "Assign bookmark # to copied note"),
+                self._blank(),
+                line("[b]Editing[/b]"),
+                line("bksp", "Edit note"),
+                line("enter", "Add new note"),
+                line("delete", "Delete note"),
+                line("u/d", "Move note up/down"),
+                line("tab/S-tab", "Indent/deindent"),
+                line("h", "Cycle highlight"),
+                line("x", "Toggle #DONE"),
+                line("X", "Toggle hiding #DONE notes"),
+                line("c", "Copy (press again to uncopy)"),
+                line("v", "Paste top of copied list after cursor"),
+                line("l", "Paste [[path]] link to top of copied list"),
+                line("y", "Yank note text to system clipboard"),
+                line("Y", "Yank note + subtree to system clipboard"),
+                line("z/Z", "Undo/redo"),
+                self._blank(),
+                line("[b]Commands[/b]"),
+                line(":", "Command mode"),
+                line(":j+ <text>", "Add journal entry"),
+                line(":collapse", "Collapse all nodes in context"),
+                line(":? <query regex>", "Search in context"),
+                line(":?*/?? <query regex>", "Search globally"),
+                line("", "(empty query to find similar)"),
+                line(":sn [filter]", "Sticky notes (context)"),
+                line(":sn* [filter]", "Sticky notes (global)"),
+                line(":snr", "Recover last sticky board"),
+                line(":random", "Jump to random note (context)"),
+                line(":random*", "Jump to random note (global)"),
+                line(":insert <name>", "Insert template"),
+                line(":run [<idx>]", "Run ! cmd or follow [[PATH]]"),
+                line(":archive set/unset", "Mark/unmark cursor as #ARCHIVE"),
+                line(":archive show/hide", "Reveal/hide archived nodes"),
+                line(":help", "Show this help"),
+                self._blank(),
+                line("[b]Other[/b]"),
+                line("s", "Save"),
+                line("`", "Cycle side panel"),
+            ]
+        )
+        self._render_options(options, highlight=self._first_entry_index(options))
+
+    # --------------------------------------------------------------- search
+
+    def show_search_results(self, matches, query="", current_index=0):
+        logging.info(
+            f"show_search_results called with {len(matches)} matches, query={query!r}"
+        )
+        self._pre_search_mode_index = self.mode_index
+        self._search_results = matches
+        self.open_panel()
+        self._render_search_rows(query, highlight_match=current_index)
+
+    def _render_search_rows(self, query="", highlight_match=0):
+        self._last_search_query = query
+        self._option_nodes = {}
+        self._opt_counter = 0
+        self._search_entry_ids = []
+        matches = self._search_results
+        width = self._content_width()
+
+        options = []
+
+        copied_nodes = self.app.note_tree.copied_nodes
+        hl1 = self.app.theme_variables.get("HL1", "white")
+
+        search = getattr(self.app, "_search", None)
+        if (
+            search
+            and getattr(search, "is_local", False)
+            and search.context_node is not None
+        ):
+            skip = search.context_node.depth + 1
+        else:
+            skip = 1
+
+        highlight_index = None
+        for idx, match_node in enumerate(matches):
+            is_copied = match_node in copied_nodes
+
+            path_parts = match_node.get_path(include_self=False)[skip:]
+            if path_parts:
+                path_preview = self._ellipsize(
+                    " › ".join(path_parts[:3]), max(width - 6, 10)
+                )
+                options.append(
+                    Option(
+                        Text.from_markup(f"[dim]{path_preview}[/dim]"), disabled=True
+                    )
+                )
+
+            if is_copied:
+                marker = Text.from_markup(f"[{hl1}]•[/{hl1}]")
+            else:
+                marker = Text.from_markup("[dim]›[/dim]")
+
+            opt = self._register(self._line(marker, match_node.text, width), match_node)
+            self._search_entry_ids.append(opt.id)
+            if idx == highlight_match:
+                highlight_index = len(options)
+            options.append(opt)
+            options.append(self._blank())
+
+        if not matches:
+            options.append(Option(Text("No results found"), disabled=True))
+
+        self._render_options(options, highlight=highlight_index)
+
+    def hide_search_results(self):
+        self._search_results = []
+        self._search_entry_ids = []
+        self.mode_index = self._pre_search_mode_index
+        self.update_data()
+
+    # ------------------------------------------------------- messages / keys
+
+    def _node_for_option(self, option) -> object:
+        if option is None or option.id is None:
+            return None
+        return self._option_nodes.get(option.id)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected):
+        node = self._option_nodes.get(event.option_id)
+        if node is None:
+            return
+        if self._search_results:
+            self.app.accept_search(node)
+        else:
+            self.app.jump_to_node(node)
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted):
+        # Search: live-preview the highlighted match + update status bar.
+        if self._search_results:
+            node = self._option_nodes.get(event.option_id)
+            if node is not None and event.option_id in self._search_entry_ids:
+                order = self._search_entry_ids.index(event.option_id)
+                self.app.status_bar.search_progress = (order, len(self._search_results))
+                if getattr(self.app, "_search", None) is not None:
+                    self.app._search.index = order
+                self.app.note_tree_widget.update_location(
+                    context_node=node.parent, line_node=node
+                )
+
+    def _current_node(self):
+        if self.highlighted is None:
+            return None
+        return self._node_for_option(self.get_option_at_index(self.highlighted))
+
+    def on_focus(self):
+        if self._open:
+            self._apply_border(focused=True)
+
+    def on_blur(self):
+        if self._open:
+            self._apply_border(focused=False)
+
+    def on_key(self, event):
+        if event.key == "enter":
+            # Handle the jump here and swallow the key so it never bubbles to
+            # ForestApp.on_key (which would also fire action_add_note).
+            # prevent_default stops OptionList's own `select` binding, so no
+            # duplicate OptionSelected fires; mouse clicks still route through
+            # on_option_list_option_selected.
+            event.stop()
+            event.prevent_default()
+            node = self._current_node()
+            if node is not None:
+                if self._search_results:
+                    self.app.accept_search(node)
+                else:
+                    self.app.jump_to_node(node)
+            return
+        if event.key == "escape":
+            event.stop()
+            event.prevent_default()
+            if self._search_results:
+                self.app.cancel_search()
+            else:
+                self.app.hide_sidebar_focus_tree()
+            return
+        if event.key in ("u", "d"):
+            # u/d reorder a copied note up/down when the bookmarks panel is
+            # focused and the cursor sits on a copied note. Swallowed in every
+            # other context so the keys never bubble to the tree.
+            event.stop()
+            event.prevent_default()
+            if self.is_showing_bookmarks():
+                node = self._current_node()
+                if node is not None and node in self.app.note_tree.copied_nodes:
+                    self.app.copied_move(node, up=(event.key == "u"))
+            return
+        if event.key == "c" and self._search_results:
+            event.stop()
+            event.prevent_default()
+            node = self._current_node()
+            if node is not None and node.parent is not None:
+                # Match ordinal is stable across the toggle; preserve highlight.
+                order = self._search_entry_ids_order(node)
+                self.app.copied_toggle(node)
+                self._render_search_rows(
+                    getattr(self, "_last_search_query", ""), highlight_match=order
+                )
+                self.app.note_tree_widget.render()
+            return
+
+    def _search_entry_ids_order(self, node):
+        for order, oid in enumerate(self._search_entry_ids):
+            if self._option_nodes.get(oid) is node:
+                return order
+        return 0

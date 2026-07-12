@@ -20,10 +20,8 @@ Forest uses `config.json` in the project root for settings:
 - `undo_depth` (integer): Max number of undo steps (default: 50)
 - `auto_save` (boolean): Enable/disable periodic auto-save (default: true)
 - `auto_save_interval` (integer): Seconds between auto-save checks (default: 5)
-- `margin_side` (string, "left" or "right"): Side of the screen where the tree margin and InfoSidebar are placed (default: "right")
-- `margin_width` (integer): Cells reserved on `margin_side` for the tree margin and sidebar width. Dropped if it would shrink the tree below a small internal minimum; the sidebar still overlays at this width (default: 30)
+- `margin_width` (integer): Cells reserved on the right for the tree margin and InfoSidebar width. Dropped if it would shrink the tree below a small internal minimum; the sidebar still overlays at this width (default: 30). The InfoSidebar is always on the right and the doodle pane always on the left; both margins are reserved permanently (the panes toggle visibility within the reserved strip) and are only dropped when they would crowd the tree.
 - `scroll_margin` (integer): Minimum lines kept between the cursor and the top/bottom of the tree viewport before scrolling. `0` = scroll only at the edge; large values approximate centering. Clamped to at most half the viewport (default: 5)
-- `doodle_pane_visible` (boolean): Whether the doodle pane is shown at startup (default: true)
 
 If `config.json` is missing, Forest uses defaults ("forest" theme, INFO logging). Copy `config.json.example` to `config.json` to customize settings.
 
@@ -205,7 +203,7 @@ config.json.example   - Example configuration file (template)
 ### Main bindings (defined in ForestApp.BINDINGS)
 - `e` or `backspace`: Edit current note
 - `:`: Enter command mode
-- `` ` `` (backtick): Cycle side panel (bookmarks/journal views)
+- `` ` `` (backtick): Reveal/cycle the side panels. First press shows both the InfoSidebar (bookmarks) and the doodle pane; next press cycles the InfoSidebar (journal); next press hides both. The doodle pane is revealed/hidden together with the InfoSidebar via `` ` `` only (search/help open just the InfoSidebar).
 
 ### Tree navigation (defined in NoteTreeWidget.BINDINGS)
 - `s`: Save

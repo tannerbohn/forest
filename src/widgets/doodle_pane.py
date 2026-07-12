@@ -12,6 +12,7 @@ class DoodlePane(Static):
         height: 100%;
         background: $background;
         background-tint: $panel 10%;
+        visibility: hidden;
         layer: overlay;
         offset: 0 1;
         hatch: right $panel;
@@ -39,7 +40,7 @@ class DoodlePane(Static):
         self._stroke_cells: set[tuple[int, int]] = set()
         self._color_idx: int = 0
         self._ancestor_cells: dict[tuple[int, int], int] = {}
-        self.pane_visible: bool = True  # overridden on mount from config
+        self.pane_visible: bool = False  # revealed together with the info panel
         self.can_focus = True
         self._dirty: bool = False
         # Snapshot of the current canvas cells at mouse-down, to detect no-op strokes.
@@ -82,11 +83,14 @@ class DoodlePane(Static):
             self.styles.border_right = no_border
 
     def set_visible(self, visible: bool):
+        # The pane keeps its real width at all times (its margin is permanently
+        # reserved); `visibility` is the open/closed switch, mirroring InfoSidebar.
+        # `hidden` paints nothing, so no strip lingers when closed.
         self.pane_visible = visible
-        self.styles.display = "block" if visible else "none"
-        app_layout = getattr(self.app, "_apply_layout", None)
-        if callable(app_layout):
-            app_layout()
+        self.styles.visibility = "visible" if visible else "hidden"
+        if visible:
+            self._apply_border()
+            self._refresh_render()
 
     def set_context(self, node):
         self._current_node = node
@@ -447,11 +451,13 @@ class DoodlePane(Static):
 
     def on_focus(self, event):
         self._swallow_next_mousedown = True
-        self._apply_border(focused=True)
+        if self.pane_visible:
+            self._apply_border(focused=True)
 
     def on_blur(self, event):
         self._end_stroke()
-        self._apply_border(focused=False)
+        if self.pane_visible:
+            self._apply_border(focused=False)
 
     def on_key(self, event):
         if event.key == "M":

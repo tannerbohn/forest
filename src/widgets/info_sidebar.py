@@ -105,9 +105,17 @@ class InfoSidebar(OptionList):
             self.styles.border_left = no_border
 
     def _content_width(self) -> int:
-        # The panel is always laid out at its real width (only `visibility`
-        # toggles), so content_size is reliable here.
-        w = self.content_size.width or self._panel_width or 30
+        # Derive the inner width from the known outer panel width, not the
+        # live content_size: update_data() reads this right after open_panel()
+        # adds the divider border, before Textual has re-laid-out, so
+        # content_size still reflects the pre-border geometry and text wraps a
+        # column early. Chrome = DEFAULT_CSS `padding: 0 1` (2) + the 1-col
+        # divider border added by _apply_border() only when open.
+        if self._panel_width:
+            chrome = 2 + (1 if self._open else 0)
+            w = self._panel_width - chrome
+        else:
+            w = self.content_size.width or 30
         return max(w, 16)
 
     # ------------------------------------------------------- option helpers

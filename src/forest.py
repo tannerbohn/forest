@@ -210,6 +210,12 @@ class ForestApp(App):
         )
         self.doodle_pane.set_context(self.note_tree.context_node)
 
+        # Seed context history with the loaded position so the first navigation
+        # has a valid "back" target.
+        self.note_tree_widget.context_history.seed(
+            self.note_tree.context_node, self.note_tree_widget.cursor_node
+        )
+
     def _allocate_doodle_id(self) -> int:
         i = self._doodle_next_id
         self._doodle_next_id += 1
@@ -377,13 +383,27 @@ class ForestApp(App):
             return
         sidebar.update_data()
 
+    def resolve_paste_source(self):
+        """The note v/l act on: the last quick-link entry the user focused in
+        the bookmarks panel, if it's still copied, else the top of the copied
+        stack. Returns None when nothing is available to paste."""
+        nt = self.note_tree
+        src = getattr(self, "_paste_source_node", None)
+        if src is not None and src in nt.copied_nodes:
+            return src
+        return nt.copied_nodes[-1] if nt.copied_nodes else None
+
     def copied_toggle(self, node) -> None:
         nodes = self.note_tree.copied_nodes
         if node in nodes:
             nodes.remove(node)
             self.note_tree.remove_bookmark_for(node)
+            if getattr(self, "_paste_source_node", None) is node:
+                self._paste_source_node = None
         else:
             nodes.append(node)
+            # A freshly copied note becomes the paste/link target (as if focused).
+            self._paste_source_node = node
         self.note_tree.has_unsaved_operations = True
         self.status_bar.needs_saving = True
         self._copied_refresh_sidebar()

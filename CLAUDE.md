@@ -129,6 +129,13 @@ python3 src/forest.py trees/my_new_tree.txt
 - Least recently used bookmark gets replaced when all 10 slots full
 - Displayed with 💠 icon in left margin
 
+### Context History
+- Browser-style back/forward over context changes. `alt+left` = back, `alt+right` = forward.
+- Implemented by `ContextHistory` (pure data helper in `context_history.py`): a flat list of `(context_node, cursor_node)` entries plus an index, owned by `NoteTreeWidget` as `self.context_history`. In-memory only (not persisted), seeded in `ForestApp.on_mount`.
+- `NoteTreeWidget.update_location(context_node, line_node=None, record=True)` is the **single navigation primitive** — the only method that changes the context — so all history logic lives there and nowhere else: it calls `context_history.mark_leaving(...)` *before* the move (refreshing the current entry's cursor to where it actually sits, so back restores it) and `context_history.record(...)` *after* (appending the destination). `line_node=None` places the cursor at the top of the new context. Every navigation routes through it: `action_zoom_in`/`action_zoom_out` and `visit_bookmark` (via the pure `NoteTree.bookmark_context()` query) just call `update_location`; there is no per-site recording to remember. `mark_leaving` is guarded by context identity so a drifted search preview doesn't corrupt the pre-search entry. A new committed destination truncates any forward entries (like a browser).
+- Search-result **cycling** previews context via `update_location(..., record=False)` (`widgets/info_sidebar.py`), so previews are not recorded; only a **selected** result (`accept_search`) records. Cursor-only moves (arrows, local `:random`, `?`) don't change context so aren't recorded.
+- Back/forward apply results with `record=False` and skip entries whose node is no longer live (`_node_is_live` verifies child linkage up to the root, catching both delete — which unlinks without clearing `.parent` — and undo/redo deep-copy replacement). Reaching either end is a silent no-op.
+
 ### Journal
 - Command `:j+ <text>` adds timestamped journal entry
 - Auto-creates hierarchy: Journal → Year → Month → Entry
@@ -185,6 +192,7 @@ src/
   subtrees.py         - Predefined note templates
   themes.py           - Color theme definitions
   copied_list.py      - CopiedList helper (copy/paste/cycle logic; renders in sidebar)
+  context_history.py  - ContextHistory helper (browser-style back/forward over context changes)
   clipboard.py        - OSC 52 system-clipboard write helper
   widgets/
     status_bar.py     - StatusBar (context path, save indicator, timer)
@@ -223,8 +231,10 @@ config.json.example   - Example configuration file (template)
 - `y`: Yank cursor note text to system clipboard (OSC 52)
 - `Y`: Yank cursor note + descendants to system clipboard (OSC 52)
 - `r`: Renew the cursor note's `#T-` expiry timer (restart its countdown)
+- `?`: Jump to the next open (leaf) question in the current context, wrapping back to the first after the last. "Open question" matches the InfoSidebar `leaf Q` count: a childless note whose text contains `?`, excluding `#DONE`/`#ARCHIVE`.
 - `enter`: Add new note
 - `0-9`: Jump to bookmark
+- `alt+left` / `alt+right`: Context history back/forward (browser-style). Every committed context change (zoom, bookmark jump, search-result selection, `[[path]]` follow, random jump, etc.) is recorded to an in-memory list; back/forward step through it restoring both the context node and cursor. Search-result *cycling* (preview) is not recorded — only a selected result is. Stale entries (nodes removed by delete/undo) are skipped. See Context History below.
 - `z`: Undo
 - `Z`: Redo
 

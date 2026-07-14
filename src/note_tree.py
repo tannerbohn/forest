@@ -559,17 +559,15 @@ class NoteTree:
 
         # self.has_unsaved_operations = True
 
-    def jump_to_bookmark(self, index) -> Node | None:
-        if index in self.bookmarks:
-
-            focus_node = self.bookmarks[index]
-
-            if not focus_node.children:
-                self.update_context(focus_node.parent)
-            else:
-                self.update_context(focus_node)
-
-            return focus_node
+    def bookmark_context(self, index) -> Node | None:
+        """Return the context node to focus for a bookmark, or None if the slot
+        is unset. A leaf bookmark focuses its parent; a branch focuses itself.
+        Pure query — the widget performs the actual navigation via
+        `update_location` so the move is recorded in context history."""
+        focus_node = self.bookmarks.get(index)
+        if focus_node is None:
+            return None
+        return focus_node.parent if not focus_node.children else focus_node
 
     def get_bookmark_slot(self, node: Node) -> int | None:
         for slot, n in self.bookmarks.items():

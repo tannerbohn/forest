@@ -14,6 +14,7 @@ from textual.scroll_view import ScrollView
 from textual.strip import Strip
 
 from clipboard import copy_to_clipboard
+from context_history import ContextHistory
 from note_tree import NoteTree
 from subtrees import SUBTREES
 from themes import TEXT_COLOR_REGEX_LIST
@@ -90,6 +91,9 @@ class NoteTreeWidget(ScrollView):
         Binding("y", "yank_node()", "Yank to clipboard", show=False),
         Binding("Y", "yank_subtree()", "Yank subtree to clipboard", show=False),
         Binding("r", "renew_expiry()", "Renew expiry", show=False),
+        Binding("?", "next_question()", "Next open question", show=False),
+        Binding("alt+left", "history_back()", "History back", show=False),
+        Binding("alt+right", "history_forward()", "History forward", show=False),
     ]
 
     def __init__(self, note_tree: NoteTree, id: str):
@@ -100,6 +104,9 @@ class NoteTreeWidget(ScrollView):
         self.rows: list[VisualRow] = []
         self.node_first_row: dict[int, int] = {}  # id(node) -> first row index
         self.cursor_row = 0
+
+        # Browser-style back/forward history of context changes (in-memory only).
+        self.context_history = ContextHistory()
 
         self.age_gradient = Gradient((0, "red"), (1, "black"))
         self._line_cache: dict = {}
@@ -275,10 +282,60 @@ class NoteTreeWidget(ScrollView):
         self.refresh()
         return True
 
-    def update_location(self, context_node, line_node):
+    def update_location(self, context_node, line_node=None, record=True):
+        """The single navigation primitive: change the visible context, place
+        the cursor, and record the move in the browser-style context history.
+
+        `line_node` is the cursor target in the new context; None (the default)
+        places the cursor at the top. `record=False` suppresses history — used
+        for search previews and when replaying history via back/forward.
+
+        Because this is the only method that changes context, history recording
+        lives here alone: it captures the cursor being left (so back restores it)
+        before the move, and records the arrival after.
+        """
+        if record:
+            self.context_history.mark_leaving(
+                self.note_tree.context_node, self.cursor_node
+            )
         self.note_tree.update_context(context_node)
         self.render()
-        self._fix_cursor_position(line_node)
+        if line_node is None:
+            self.move_cursor_to_line(0)
+        else:
+            self._fix_cursor_position(line_node)
+        if record:
+            self.context_history.record(self.note_tree.context_node, self.cursor_node)
+
+    def _node_is_live(self, node) -> bool:
+        """True if `node` is still attached to the current tree. Verifies child
+        linkage at each step, since delete removes a node from its parent's
+        children without clearing its `parent` pointer, and undo/redo replaces
+        nodes with deep-copies whose ancestor chain no longer reaches the root."""
+        if node is None:
+            return False
+        while node.parent is not None:
+            if node not in node.parent.children:
+                return False
+            node = node.parent
+        return node is self.note_tree.root
+
+    def action_history_back(self):
+        self._apply_history(self.context_history.back)
+
+    def action_history_forward(self):
+        self._apply_history(self.context_history.forward)
+
+    def _apply_history(self, step):
+        """Step the history in one direction, skipping entries whose context
+        node is no longer live. Silent no-op when nothing valid remains."""
+        entry = step()
+        while entry is not None and not self._node_is_live(entry[0]):
+            entry = step()
+        if entry is None:
+            return
+        context_node, cursor_node = entry
+        self.update_location(context_node, cursor_node, record=False)
 
     # ------------------------------------------------------------- rendering
 
@@ -323,6 +380,12 @@ class NoteTreeWidget(ScrollView):
                     body = re.sub(pattern, f"[{formatting}]\\g<0>[/{formatting}]", body)
                 except re.error as e:
                     logging.error(f"Invalid regex pattern '{pattern}': {e}")
+            # Question marks stand out: leaf-node questions (open/unanswered)
+            # more than questions on branch nodes.
+            if "?" in body and not node.children:
+                q_var = "HL1"  # "HL3" if  else "HL1"
+                q_color = tvars.get(q_var) or ("red" if not node.children else "green")
+                body = re.sub(r"\?", f"[{q_color}]?[/{q_color}]", body)
             if node.is_highlighted():
                 hashtag = node.get_highlight_hashtag()
                 hl_fallback = {"HL1": "green", "HL2": "yellow", "HL3": "red"}
@@ -581,9 +644,9 @@ class NoteTreeWidget(ScrollView):
 
     def action_paste_node(self):
         node = self.cursor_node
-        if not self.note_tree.copied_nodes or not node:
+        source = self.app.resolve_paste_source()
+        if source is None or not node:
             return
-        source = self.note_tree.copied_nodes[-1]
         destination = node
         if destination == source:
             return
@@ -599,8 +662,11 @@ class NoteTreeWidget(ScrollView):
         destination.paste_node_here(source, as_sibling=as_sibling)
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
-        self.note_tree.copied_nodes.pop()
+        if source in self.note_tree.copied_nodes:
+            self.note_tree.copied_nodes.remove(source)
         self.note_tree.remove_bookmark_for(source)
+        if getattr(self.app, "_paste_source_node", None) is source:
+            self.app._paste_source_node = None
         if self.app.info_sidebar.is_open:
             self.app.info_sidebar.update_data()
         self.render()
@@ -608,9 +674,9 @@ class NoteTreeWidget(ScrollView):
 
     def action_paste_link(self):
         node = self.cursor_node
-        if not self.note_tree.copied_nodes or not node:
+        source = self.app.resolve_paste_source()
+        if source is None or not node:
             return
-        source = self.note_tree.copied_nodes[-1]
         destination = node
         if destination == source:
             return
@@ -633,8 +699,8 @@ class NoteTreeWidget(ScrollView):
             new_node = destination.add_child(link_text, top=True)
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True
-        popped = self.note_tree.copied_nodes.pop()
-        self.note_tree.remove_bookmark_for(popped)
+        # Linking leaves the source in the copied stack (unlike paste) so the
+        # same note can be linked repeatedly.
         if self.app.info_sidebar.is_open:
             self.app.info_sidebar.update_data()
         self.render()
@@ -705,10 +771,7 @@ class NoteTreeWidget(ScrollView):
             )
             return
 
-        self.note_tree.update_context(node)
-        self.render()
-        if self.note_tree.context_node.children:
-            self._fix_cursor_position(self.note_tree.context_node.children[0])
+        self.update_location(node)
 
     def action_zoom_out(self):
         if self.app.in_search_mode():
@@ -716,11 +779,7 @@ class NoteTreeWidget(ScrollView):
 
         node = self.cursor_node
         if not node:
-            self.note_tree.update_context(
-                self.note_tree.context_node.parent, expand=True
-            )
-            self.render()
-            self.move_cursor_to_line(0)
+            self.update_location(self.note_tree.context_node.parent)
             return
 
         if not node.parent:
@@ -739,9 +798,7 @@ class NoteTreeWidget(ScrollView):
         else:
             if self.note_tree.context_node.depth > 0:
                 _node = self.note_tree.context_node
-                self.note_tree.update_context(self.note_tree.context_node.parent)
-                self.render()
-                self._fix_cursor_position(_node)
+                self.update_location(_node.parent, _node)
 
     def on_mouse_scroll_down(self, event):
         event.prevent_default()
@@ -773,6 +830,48 @@ class NoteTreeWidget(ScrollView):
                 self._set_cursor(j)
                 return
 
+    def _is_open_question(self, node) -> bool:
+        """A leaf note that poses an unanswered question (matches the sidebar's
+        `leaf Q` count in InfoSidebar._branch_stats)."""
+        return (
+            not node.children
+            and "?" in node.text
+            and not node.is_done()
+            and not node.is_archived()
+        )
+
+    def action_next_question(self):
+        """Move the cursor to the next open (leaf) question in the current
+        context, wrapping back to the first when past the last one. Descends
+        into collapsed branches, expanding the path to the hit when needed."""
+        ctx = self.note_tree.context_node
+        # Full pre-order walk of the context subtree, including collapsed
+        # branches ([0] is the context node itself — skip it).
+        full = ctx.get_node_list(only_visible=False)[1:]
+        q_positions = [i for i, node in enumerate(full) if self._is_open_question(node)]
+        if not q_positions:
+            self.app.notify("No open questions in this context.")
+            return
+
+        pos = {id(node): i for i, node in enumerate(full)}
+        cur = pos.get(id(self.cursor_node), -1)
+        target_i = next((i for i in q_positions if i > cur), q_positions[0])
+        target = full[target_i]
+
+        # Already visible: just move the cursor (fast path, no rebuild).
+        if id(target) in self.node_first_row:
+            self._fix_cursor_position(target)
+            return
+
+        # Hidden inside a collapsed branch: expand every ancestor between the
+        # target and the context node, then rebuild and land on it.
+        p = target.parent
+        while p is not None and p is not ctx:
+            p.is_collapsed = False
+            p = p.parent
+        self.render()
+        self._fix_cursor_position(target)
+
     def action_save(self):
         logging.info("SAVING")
         self.note_tree.save()
@@ -799,10 +898,9 @@ class NoteTreeWidget(ScrollView):
         self.move_cursor_to_line(0)
 
     def visit_bookmark(self, bookmark_index: int):
-        _node = self.note_tree.jump_to_bookmark(bookmark_index)
-        if _node:
-            self.render()
-            self.move_cursor_to_line(0)
+        context = self.note_tree.bookmark_context(bookmark_index)
+        if context is not None:
+            self.update_location(context)
 
     def jump_to_random(self, global_scope=False):
         if global_scope:

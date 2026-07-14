@@ -223,23 +223,51 @@ class InfoSidebar(OptionList):
         )
         self.update_data()
 
+    def _branch_stats(self, node) -> str:
+        """One-line branch summary: age of the newest note and the number of
+        open-question leaves (leaf notes with a `?`, excluding #DONE/#ARCHIVE)."""
+        questions = sum(
+            1
+            for n in node.get_node_list()
+            if not n.children
+            and "?" in n.text
+            and not n.is_done()
+            and not n.is_archived()
+        )
+        days = node.get_days_old(recurse=True)
+        age = "today" if days <= 0 else f"{days}d ago"
+        return f"{age} - {questions} leaf Q"
+
+    def _bookmark_entry(self, marker, node, width) -> Option:
+        """Two-line bookmark entry: note text on line 1, dim branch stats on
+        line 2 (aligned under the text)."""
+        first = self._line(marker, node.text, width - 1)
+        indent = " " * (marker.cell_len + 1)
+        stats = self._ellipsize(indent + self._branch_stats(node), width)
+        t = Text()
+        t.append_text(first)
+        t.append("\n")
+        t.append(stats, style="dim")
+        return self._register(t, node)
+
     def _build_bookmark_rows(self, width):
-        options = [self._header("Quick Links"), self._blank()]
+        options = [self._header("Bookmarks"), self._blank()]
         copied_nodes = self.app.note_tree.copied_nodes
         if copied_nodes:
             added_first_slot = False
             for i, node in enumerate(copied_nodes[::-1]):
+                # if i > 0:
+                #     options.append(self._blank())
                 slot = self.app.note_tree.get_bookmark_slot(node)
                 if slot is not None:
-                    base = " vl" if i == 0 else ""
-                    marker_inner = f"[b]{slot}[/b]{base}"
+                    marker_inner = f"[b]{slot}[/b]"
                     if not added_first_slot:
                         options.append(self._blank())
                         added_first_slot = True
                 else:
-                    marker_inner = "vl" if i == 0 else "•"
+                    marker_inner = "•"
                 marker = Text.from_markup(f"[dim]{marker_inner}[/dim]")
-                options.append(self._entry(marker, node.text, node, width))
+                options.append(self._bookmark_entry(marker, node, width))
 
             options.extend(
                 [
@@ -252,6 +280,10 @@ class InfoSidebar(OptionList):
                         Text.from_markup(
                             "[dim]\\[u/d]move \\[#]jump \\[S-#]bookmark[/dim]"
                         ),
+                        disabled=True,
+                    ),
+                    Option(
+                        Text.from_markup("[dim]\\[Del]remove from list[/dim]"),
                         disabled=True,
                     ),
                 ]
@@ -388,8 +420,8 @@ class InfoSidebar(OptionList):
                 line("x", "Toggle #DONE"),
                 line("X", "Toggle hiding #DONE notes"),
                 line("c", "Copy (press again to uncopy)"),
-                line("v", "Paste top of copied list after cursor"),
-                line("l", "Paste [[path]] link to top of copied list"),
+                line("v", "Paste last-focused copied note after cursor"),
+                line("l", "Paste [[path]] link to last-focused note"),
                 line("y", "Yank note text to system clipboard"),
                 line("Y", "Yank note + subtree to system clipboard"),
                 line("z/Z", "Undo/redo"),
@@ -516,9 +548,18 @@ class InfoSidebar(OptionList):
                 self.app.status_bar.search_progress = (order, len(self._search_results))
                 if getattr(self.app, "_search", None) is not None:
                     self.app._search.index = order
+                # Preview only — don't record until the user selects a result.
                 self.app.note_tree_widget.update_location(
-                    context_node=node.parent, line_node=node
+                    context_node=node.parent, line_node=node, record=False
                 )
+            return
+        # Bookmarks: the entry the user actively navigates to becomes the paste
+        # / link source (guarded by focus so background rebuilds don't clobber
+        # it). v/l then act on this last-focused note. See _resolve_paste_source.
+        if self.is_showing_bookmarks() and self.has_focus:
+            node = self._option_nodes.get(event.option_id)
+            if node is not None:
+                self.app._paste_source_node = node
 
     def _current_node(self):
         if self.highlighted is None:
@@ -556,6 +597,18 @@ class InfoSidebar(OptionList):
                 self.app.cancel_search()
             else:
                 self.app.hide_sidebar_focus_tree()
+            return
+        if event.key == "delete":
+            # Del in the bookmarks panel removes the highlighted entry from the
+            # quick-links list (and clears its bookmark slot) — it never touches
+            # the underlying note. Swallowed in every context so it can't bubble
+            # to the tree and delete the cursor note while the panel is focused.
+            event.stop()
+            event.prevent_default()
+            if self.is_showing_bookmarks():
+                node = self._current_node()
+                if node is not None and node in self.app.note_tree.copied_nodes:
+                    self.app.copied_toggle(node)
             return
         if event.key in ("u", "d"):
             # u/d reorder a copied note up/down when the bookmarks panel is

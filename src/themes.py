@@ -144,8 +144,6 @@ THEMES = {
 # Note: Patterns are applied in order
 TEXT_COLOR_REGEX_LIST = [
     (r"^ (\!.*)", "#919191"),
-    (r"\?\?", "bold"),
-    (r"\?", "#ffffff"),
     (r"\b\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?\b", "dim"),
     (r"\*.*\*", "bold"),
     (r"^ (>.*)", "dim"),

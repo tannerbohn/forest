@@ -232,19 +232,10 @@ class InfoSidebar(OptionList):
         self.update_data()
 
     def _branch_stats(self, node) -> str:
-        """One-line branch summary: age of the newest note and the number of
-        open-question leaves (leaf notes with a `?`, excluding #DONE/#ARCHIVE)."""
-        questions = sum(
-            1
-            for n in node.get_node_list()
-            if not n.children
-            and "?" in n.text
-            and not n.is_done()
-            and not n.is_archived()
-        )
+        """One-line branch summary: age of the newest note in the branch. (The
+        open-question leaf count now lives in the command-mode info panel.)"""
         days = node.get_days_old(recurse=True)
-        age = "today" if days <= 0 else f"{days}d ago"
-        return f"{age} - {questions} leaf Q"
+        return "today" if days <= 0 else f"{days}d ago"
 
     def _bookmark_entry(self, marker, node, width) -> Option:
         """Two-line bookmark entry: note text on line 1, dim branch stats on
@@ -299,8 +290,35 @@ class InfoSidebar(OptionList):
 
         return options
 
+    def _build_expiring_rows(self, width):
+        """Expiring (#T-) notes, soonest first. Selectable so a highlighted
+        entry jumps to the note. Shown at the top of the journal view."""
+        nodes = sorted(
+            self.app.note_tree.iter_timer_nodes(), key=lambda n: n.expiry_datetime
+        )
+        if not nodes:
+            return []
+        red = self.app.theme_variables.get("HL3", "red")
+        options = [self._header("Expiring"), self._blank()]
+        for node in nodes:
+            expired, label = node.expiry_status()
+            loop = "↺" if node.expiry_recurring else ""
+            if expired:
+                marker = Text.from_markup(f"[dim {red}]+{label}{loop}[/dim {red}]")
+                options.append(
+                    self._entry(marker, node.get_text(), node, width, body_style=f"dim {red}")
+                )
+            else:
+                marker = Text.from_markup(f"[dim]{label}{loop}[/dim]")
+                options.append(self._entry(marker, node.get_text(), node, width))
+        return options
+
     def _build_perpetual_journal_rows(self, width):
         from datetime import date as _date
+
+        expiring = self._build_expiring_rows(width)
+        if expiring:
+            expiring.append(self._blank())
 
         before, after = 3, 7
         node_matches = self.app.note_tree.get_journal_entries_in_day_radius(
@@ -311,7 +329,7 @@ class InfoSidebar(OptionList):
         hl1 = self.app.theme_variables.get("HL1", "white")
         strip_re = r"\[\d{4}-\d{2}-\d{2}.*?\]\s*"
 
-        options = [self._header(f"-{before} / +{after} days"), self._blank()]
+        options = expiring + [self._header(f"-{before} / +{after} days"), self._blank()]
 
         today_inserted = any(match_str[5:] == today_md for _, match_str in node_matches)
         today_row_added = False
@@ -450,6 +468,7 @@ class InfoSidebar(OptionList):
                 line(":run [<idx>]", "Run ! cmd or follow [[PATH]]"),
                 line(":archive set/unset", "Mark/unmark cursor as #ARCHIVE"),
                 line(":archive show/hide", "Reveal/hide archived nodes"),
+                line(":reload", "Reload file from disk (merge external edits)"),
                 line(":help", "Show this help"),
                 self._blank(),
                 line("[b]Other[/b]"),

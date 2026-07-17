@@ -5,5 +5,6 @@
     "auto_save": false,
     "auto_save_interval": 5,
     "margin_width": 30,
-    "scroll_margin": 5
+    "scroll_margin": 5,
+    "external_reload_interval": 2
 }

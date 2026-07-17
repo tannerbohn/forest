@@ -102,6 +102,22 @@ Categories of interaction: navigation/zoom (arrows), editing, highlight/done cyc
 ### Sound effects
 - Audio feedback for timer events.
 
+### External file sync
+- While a tree is open, Forest polls the file's mtime (config
+  `external_reload_interval` seconds; `0` disables) and pulls in edits made by
+  other programs. Reload never happens mid-edit or mid-search (deferred to a
+  later tick).
+- Reconciliation is **content-aware**, not last-writer-wins: with no unsaved
+  in-app edits it reloads; with unsaved edits it does a line-level **3-way merge**
+  (base / local / disk, `three_way_merge` in `utils.py`) so disjoint external and
+  local changes are both kept. Only a genuine overlapping conflict drops the local
+  side — and even then the pre-reload tree is seeded as a single **undo** step, so
+  `undo` restores it. `:reload` forces the same reconcile on demand.
+- Mechanism lives in `ForestApp._check_external_change` / `_reconcile_disk`
+  (`forest.py`) over `NoteTree.apply_lines` / `apply_external` / `serialize_lines`
+  and the `_base_lines`/`_disk_mtime` baseline (`note_tree.py`). The baseline is
+  refreshed on every load and save so Forest's own writes aren't seen as external.
+
 ## File organization
 
 ```

@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import textwrap
+import time
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -25,7 +26,7 @@ from sticky_notes import StickyNotesScreen, _parse_flashcard
 from themes import THEMES
 from timer import Timer
 from utils import (apply_input_substitutions, compose_clock_notify_contents,
-                   extract_path_references)
+                   extract_path_references, three_way_merge)
 from widgets.command_info_panel import CommandInfoPanel
 from widgets.doodle_pane import DoodlePane
 from widgets.info_sidebar import InfoSidebar
@@ -200,6 +201,11 @@ class ForestApp(App):
         if self.config.auto_save and self.config.auto_save_interval > 0:
             self.set_interval(self.config.auto_save_interval, self._auto_save)
 
+        if self.config.external_reload_interval > 0:
+            self.set_interval(
+                self.config.external_reload_interval, self._check_external_change
+            )
+
         self._apply_layout()
 
         next_id, canvases = self.note_tree.load_doodles_sidecar()
@@ -256,6 +262,101 @@ class ForestApp(App):
         if self.note_tree.has_unsaved_operations:
             self.note_tree.save()
             self.status_bar.needs_saving = False
+
+    def _check_external_change(self):
+        """Poll the tree file's mtime; if it changed under us, reconcile the
+        external edits into the running app. Cheap no-op (one stat) when the
+        file is unchanged, which is the common case."""
+        nt = self.note_tree
+        try:
+            mtime = nt._current_mtime()
+        except OSError:
+            return
+        if mtime == nt.disk_mtime:
+            return
+        self._reconcile_disk(mtime)
+
+    def _reconcile_disk(self, mtime=None):
+        """Pull the current on-disk file into the app, merging with any unsaved
+        local edits when the two changed disjoint regions. Also the handler for
+        the `:reload` command (force pull). Safe to call any time — it defers
+        while the user is mid-edit or searching."""
+        nt = self.note_tree
+
+        # Don't yank the tree out from under an in-progress edit/search; retry on
+        # a later tick (baseline untouched, so the change stays pending).
+        if self._node_being_edited is not None or self.in_search_mode():
+            return
+
+        try:
+            disk_lines = nt.read_disk_lines()
+            if mtime is None:
+                mtime = nt._current_mtime()
+        except OSError:
+            # File mid-write or momentarily gone; retry next tick.
+            return
+
+        t0 = time.perf_counter()
+
+        # Remember cursor/context so we can restore after the reparse swaps every
+        # node identity out. Best-effort: index paths into the (possibly changed)
+        # tree; _resolve_index_path falls back to root if a path no longer fits.
+        ctx_path = nt._get_index_path(nt.context_node)
+        cursor_node = self.note_tree_widget.cursor_node
+        cursor_path = nt._get_index_path(cursor_node) if cursor_node else None
+
+        if not nt.has_unsaved_operations:
+            nt.apply_external(disk_lines, recover=False)
+            nt.has_unsaved_operations = False
+            nt.mark_synced(disk_lines, mtime)
+            logging.info(
+                "external sync: reloaded %d nodes in %.1f ms",
+                len(disk_lines),
+                (time.perf_counter() - t0) * 1000.0,
+            )
+            message = "↻ Reloaded (external change)"
+        else:
+            local = nt.serialize_lines()
+            if local == disk_lines:
+                # Logically identical to what we hold (e.g. a bare touch); just
+                # rebaseline so we stop flagging it.
+                nt.mark_synced(disk_lines, mtime)
+                return
+            t_merge = time.perf_counter()
+            merged, ok = three_way_merge(nt.base_lines, local, disk_lines)
+            merge_ms = (time.perf_counter() - t_merge) * 1000.0
+            if ok:
+                # Disjoint edits: keep both, then write the merge back so disk and
+                # memory reconverge and the baseline is set atomically (save()).
+                nt.apply_external(merged, recover=True)
+                nt.save()
+                self.status_bar.needs_saving = False
+                message = "↻ Merged external changes"
+            else:
+                # Overlapping edits: disk wins, but the pre-reload local tree is
+                # one undo away (recover=True seeds it as an undo snapshot).
+                nt.apply_external(disk_lines, recover=True)
+                nt.has_unsaved_operations = False
+                nt.mark_synced(disk_lines, mtime)
+                message = "↻ External change loaded — undo to restore your edits"
+            logging.info(
+                "external sync: 3-way merge over %d nodes took %.1f ms "
+                "(merge=%.1f ms, ok=%s)",
+                len(merged),
+                (time.perf_counter() - t0) * 1000.0,
+                merge_ms,
+                ok,
+            )
+
+        # Rebuild the display and restore cursor/context as best we can.
+        context = nt._resolve_index_path(ctx_path)
+        cursor = (
+            nt._resolve_index_path(cursor_path) if cursor_path is not None else None
+        )
+        self.note_tree_widget.update_location(context, cursor, record=False)
+        self.status_bar.needs_saving = nt.has_unsaved_operations
+        self.info_sidebar.update_data()
+        self.notify(message)
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -689,6 +790,10 @@ class ForestApp(App):
             refresh_state_nodes_on_dismiss=True,
         )
 
+    def _cmd_reload(self, cmd_str, args_str):
+        # Force a reconcile with the on-disk file (same path the mtime poll uses).
+        self._reconcile_disk()
+
     def _cmd_archive(self, cmd_str, args_str):
         sub = args_str.strip()
         if sub == "set":
@@ -731,6 +836,7 @@ class ForestApp(App):
         Command(("sn", "sn*"), "_cmd_sticky", takes_args=True),
         Command(("snr",), "_cmd_snr"),
         Command(("archive",), "_cmd_archive", takes_args=True),
+        Command(("reload",), "_cmd_reload"),
     )
 
     def _dispatch_command(self, cmd_str):

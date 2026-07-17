@@ -1,3 +1,4 @@
+import difflib
 import logging
 import os
 import random
@@ -27,6 +28,74 @@ def is_wsl() -> bool:
             return "microsoft" in f.read().lower()
     except OSError:
         return False
+
+
+def three_way_merge(base, local, disk):
+    """Line-level 3-way merge of three lists of lines.
+
+    `base` is the common ancestor (the file content at the last point Forest and
+    disk agreed). `local` is Forest's current serialized tree; `disk` is the
+    externally-edited file. Returns ``(merged_lines, ok)``:
+
+    - ``ok=True``: local and disk changes touched disjoint regions (or made the
+      same change); ``merged_lines`` contains both.
+    - ``ok=False``: local and disk changed the same region differently (a true
+      conflict). ``merged_lines`` is still populated (disk wins in the conflicting
+      hunk) but callers typically discard it and fall back to disk wholesale.
+
+    Standard diff3-style algorithm: anchor on base lines matched in *both* sides,
+    and for each chunk between anchors take whichever side changed relative to
+    base (or either, if they agree).
+    """
+
+    def base_map(other):
+        # base index -> other index for lines that compare equal
+        m = {}
+        for i, j, n in difflib.SequenceMatcher(
+            a=base, b=other, autojunk=False
+        ).get_matching_blocks():
+            for k in range(n):
+                m[i + k] = j + k
+        return m
+
+    ml = base_map(local)
+    md = base_map(disk)
+
+    # Anchors: base indices present (and thus aligned) in both sides. Because
+    # matching blocks are monotonic, iterating base order keeps local/disk
+    # indices monotonically increasing too.
+    anchors = [i for i in range(len(base)) if i in ml and i in md]
+
+    merged = []
+    ok = True
+    prev_b, prev_l, prev_d = -1, -1, -1
+
+    # Walk each real anchor, then a final sentinel covering the tail.
+    for a_b in anchors + [None]:
+        if a_b is None:
+            b1, l1, d1 = len(base), len(local), len(disk)
+        else:
+            b1, l1, d1 = a_b, ml[a_b], md[a_b]
+
+        base_chunk = base[prev_b + 1 : b1]
+        local_chunk = local[prev_l + 1 : l1]
+        disk_chunk = disk[prev_d + 1 : d1]
+
+        if local_chunk == base_chunk:
+            merged.extend(disk_chunk)  # only disk changed here
+        elif disk_chunk == base_chunk:
+            merged.extend(local_chunk)  # only local changed here
+        elif local_chunk == disk_chunk:
+            merged.extend(local_chunk)  # both made the same change
+        else:
+            ok = False  # both changed this region differently
+            merged.extend(disk_chunk)
+
+        if a_b is not None:
+            merged.append(base[a_b])  # == local[l1] == disk[d1]
+            prev_b, prev_l, prev_d = a_b, l1, d1
+
+    return merged, ok
 
 
 def play_sound_effect(name):

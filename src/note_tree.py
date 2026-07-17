@@ -21,13 +21,62 @@ METADATA_RE = re.compile(r"\s+@\{([^}]+)\}$")
 class NoteTree:
     def __init__(self, filename, undo_depth=50):
         self.filename = filename
-        self.root = Node(parent=None, text=filename)
 
-        with open(self.filename, "r") as f:
-            lines = f.read().splitlines()
-
+        # Session/UI toggles: not derived from the file, so they persist across
+        # an external reload (apply_lines must not reset them).
         self.hide_done = False
         self.hide_archive = True
+
+        self._undo_stack = []
+        self._redo_stack = []
+        self._undo_depth = undo_depth
+
+        self.doodles_sidecar_path = self.filename + ".doodles.json"
+        # App registers a callable returning (next_id: int, canvases: dict[int, dict])
+        # to have its doodle state persisted alongside save().
+        self._doodle_payload_provider = None
+
+        # Snapshot of the file's on-disk content at the last point Forest and
+        # disk agreed (refreshed on load and every save). Together with
+        # _disk_mtime these let the app detect and 3-way-merge external edits;
+        # see apply_external() and ForestApp._check_external_change().
+        self._base_lines: list[str] = []
+        self._disk_mtime: float = 0.0
+
+        lines = self.read_disk_lines()
+        self.apply_lines(lines)
+        self._base_lines = lines
+        self._disk_mtime = self._current_mtime()
+
+    # --------------------------------------------------------------- disk I/O
+
+    def read_disk_lines(self) -> list[str]:
+        """Read the tree file into a list of lines. Raises OSError on failure;
+        callers polling for external changes should catch it and retry."""
+        with open(self.filename, "r") as f:
+            return f.read().splitlines()
+
+    def _current_mtime(self) -> float:
+        return os.path.getmtime(self.filename)
+
+    @property
+    def disk_mtime(self) -> float:
+        return self._disk_mtime
+
+    @property
+    def base_lines(self) -> list[str]:
+        return self._base_lines
+
+    def apply_lines(self, lines):
+        """(Re)build the whole tree and all file-derived state from `lines`.
+
+        Used on initial load and to reload after an external edit. Rebuilds
+        root, bookmarks, copied_nodes, context node, doodle ids and timer
+        pre-marking. Does NOT touch session toggles (hide_done/hide_archive) or
+        the undo stacks — those are the caller's concern."""
+        self.root = Node(parent=None, text=self.filename)
+        # journal is a cached node pointer; a reload changes node identities, so
+        # drop it (ensure_journal_existence re-discovers it on next use).
         self.journal = None
         self.bookmarks: dict[int, Node] = {}
         self.copied_nodes: list[Node] = []
@@ -142,50 +191,82 @@ class NoteTree:
         for n in self.iter_timer_nodes():
             n.expiry_notified = _now > n.expiry_datetime
 
-        self._undo_stack = []
-        self._redo_stack = []
-        self._undo_depth = undo_depth
+    def apply_external(self, new_lines, recover: bool):
+        """Replace the in-memory tree with a reparse of `new_lines` (a reload or
+        the result of a 3-way merge with disk).
 
-        self.doodles_sidecar_path = self.filename + ".doodles.json"
-        # App registers a callable returning (next_id: int, canvases: dict[int, dict])
-        # to have its doodle state persisted alongside save().
-        self._doodle_payload_provider = None
+        When `recover` is True (there were unsaved local edits being displaced),
+        the pre-reload tree is captured as a single undo snapshot first, so the
+        user can press undo to restore their local version. Prior undo/redo
+        history is dropped either way — its index paths are stale against the
+        rebuilt tree. Does not update the disk baseline; the caller does that."""
+        snap = None
+        if recover:
+            # Snapshot the outgoing tree *by reference*, not via deepcopy:
+            # apply_lines() builds a brand-new root and never mutates the old
+            # tree, so the old root is already an immutable, self-contained undo
+            # snapshot at zero copy cost. On a large tree this avoids a
+            # multi-second copy.deepcopy (the dominant cost of a reload).
+            snap = {
+                "path": [],
+                "subtree": self.root,
+                "context_path": self._get_index_path(self.context_node),
+            }
+        self.apply_lines(new_lines)
+        self._undo_stack = [snap] if recover else []
+        self._redo_stack = []
+
+    def mark_synced(self, lines, mtime):
+        """Record `lines`/`mtime` as the new agreed-upon disk baseline."""
+        self._base_lines = lines
+        self._disk_mtime = mtime
+
+    def serialize_lines(self) -> list[str]:
+        """Serialize the whole tree to the on-disk line format (the inverse of
+        apply_lines). Shared by save() and the external-change reconciler."""
+        node_list = self.root.get_node_list(only_visible=False, hide_done=False)
+        lines = []
+        for node in node_list:
+            if node == self.root:
+                continue
+
+            prefix = "+" if node.is_collapsed else "-"
+
+            meta_parts = [node.creation_time.strftime("%Y-%m-%d")]
+
+            for slot, bm_node in self.bookmarks.items():
+                if bm_node == node:
+                    meta_parts.append(f"b{slot}")
+                    break
+
+            for i, copied_node in enumerate(self.copied_nodes):
+                if copied_node == node:
+                    meta_parts.append(f"c{i}")
+                    break
+
+            if node == self.context_node:
+                meta_parts.append("x")
+
+            if node.doodle_id is not None:
+                meta_parts.append(f"d{node.doodle_id}")
+
+            meta_str = ",".join(meta_parts)
+            line = ("\t" * (node.depth - 1)) + f"{prefix} {node.text} @{{{meta_str}}}"
+            lines.append(line)
+        return lines
 
     def save(self):
-        node_list = self.root.get_node_list(only_visible=False, hide_done=False)
+        lines = self.serialize_lines()
 
         with open(self.filename, "w") as f:
-            for node in node_list:
-                if node == self.root:
-                    continue
-
-                prefix = "+" if node.is_collapsed else "-"
-
-                meta_parts = [node.creation_time.strftime("%Y-%m-%d")]
-
-                for slot, bm_node in self.bookmarks.items():
-                    if bm_node == node:
-                        meta_parts.append(f"b{slot}")
-                        break
-
-                for i, copied_node in enumerate(self.copied_nodes):
-                    if copied_node == node:
-                        meta_parts.append(f"c{i}")
-                        break
-
-                if node == self.context_node:
-                    meta_parts.append("x")
-
-                if node.doodle_id is not None:
-                    meta_parts.append(f"d{node.doodle_id}")
-
-                meta_str = ",".join(meta_parts)
-                line = (
-                    "\t" * (node.depth - 1)
-                ) + f"{prefix} {node.text} @{{{meta_str}}}"
+            for line in lines:
                 f.write(line + "\n")
 
         self.has_unsaved_operations = False
+        # This write is our own; baseline it so the external-change poll doesn't
+        # mistake it for someone else's edit.
+        self._base_lines = lines
+        self._disk_mtime = self._current_mtime()
         self._save_doodles_sidecar()
 
     def load_doodles_sidecar(self) -> tuple[int, dict[int, dict]]:

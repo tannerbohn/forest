@@ -12,7 +12,7 @@ class MultiPurposeSuggester(Suggester):
             self.placeholder = (
                 "help | run | timer <duration> | insert <name> | "
                 "j+ <text> | collapse | ?/?* <query> | random/random* | sn/sn* [filter] | snr | "
-                "archive set|unset|show|hide | doodle clear"
+                "archive set|unset|show|hide | doodle clear | reload"
             )
         else:
             self.placeholder = ""
@@ -49,6 +49,9 @@ class MultiPurposeSuggester(Suggester):
 
         if "run".startswith(value_lower):
             return "run"
+
+        if "reload".startswith(value_lower):
+            return "reload"
 
         if "j+".startswith(value_lower):
             return "j+ <journal entry text>"

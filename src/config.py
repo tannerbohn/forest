@@ -12,6 +12,7 @@ DEFAULT_CONFIG = {
     "auto_save_interval": 5,
     "margin_width": 30,
     "scroll_margin": 5,
+    "external_reload_interval": 2,
 }
 
 
@@ -74,3 +75,9 @@ class Config:
     @property
     def scroll_margin(self):
         return max(0, int(self.get("scroll_margin", 5)))
+
+    @property
+    def external_reload_interval(self):
+        # Seconds between polls for external edits to the open tree file.
+        # 0 disables the feature.
+        return max(0, int(self.get("external_reload_interval", 2)))

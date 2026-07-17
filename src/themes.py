@@ -122,6 +122,45 @@ verve = Theme(
 
 
 # ============================================================================
+# BLUE CRT - cyan phosphor monitor; highlights step up in brightness
+# ============================================================================
+blue_crt_bkg = "#0d171a"  # near-black glass with a faint phosphor glow
+blue_crt = Theme(
+    name="blue_crt",
+    primary="#0d3a45",  # dim cyan wash for selected line in info table
+    secondary="#08a7ee",  # the guiding color
+    foreground="#08a7ee",  # lit phosphor - the guiding color itself
+    background=blue_crt_bkg,  # background margins color
+    surface=blue_crt_bkg,  # main background
+    panel="#0e2a30",  # lifted glow for header/footer
+    variables={
+        "block-cursor-text-style": "none",
+        "block-cursor-blurred-text-style": "none",
+        "footer-key-foreground": "#14f7ff",
+        "input-selection-background": "#08a7ee 20%",
+        "dim-text": "#1a5566",  # burnt-in, barely lit - completed notes
+        "HL1": "#14f7ff",  # first step above the resting glow
+        "HL2": "#7ffaff",  # brighter - ideas
+        "HL3": "#e8fdff",  # white-hot beam bloom - high importance
+        "cursor-arrow": "#e8fdff",  # current-line indicator
+        "default-arrow": "#245f6e",  # low-profile line marker
+        "age-color-0": "#14f7ff",  # bright phosphor - fresh notes
+        "age-color-1": "#245f6e",  # aging
+        "age-color-2": "#0d2126",  # faded into the glass
+        "age-column-bg": blue_crt_bkg,  # age strip background
+        "find-text-bg": "#153f49",  # cyan wash for :f matches
+        "SNBG0": "#02c7e6",
+        "SNBG1": "#7fe2f2",
+        "SNBG2": "#4fb8cc",
+        "SNBG3": "#a8ecf7",
+        "SNBG4": "#2d8c9e",
+        "SNBG5": "#d6f7fd",
+        "SNBGR": "#0e2b30",  # lifted glow (matches panel)
+    },
+)
+
+
+# ============================================================================
 # Theme Registry
 # ============================================================================
 # All available themes - these will be registered with Textual
@@ -129,6 +168,7 @@ THEMES = {
     "forest": forest,
     "forest_light": forest_light,
     "verve": verve,
+    "blue_crt": blue_crt,
 }
 
 # ============================================================================

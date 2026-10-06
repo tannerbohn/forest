@@ -575,9 +575,6 @@ class NoteTreeWidget(ScrollView):
         node = self.cursor_node
         if not node:
             return
-        if node in self.note_tree.copied_nodes:
-            self.note_tree.copied_nodes.remove(node)
-            self.note_tree.remove_bookmark_for(node)
         self.note_tree.push_undo(node.parent)
         self.note_tree.delete_focus_node(node)
         self.render()
@@ -648,17 +645,21 @@ class NoteTreeWidget(ScrollView):
         if source is None or not node:
             return
         destination = node
-        if destination == source:
-            return
+        # Can't paste a note onto itself or into its own branch.
+        ancestor = destination
+        while ancestor is not None:
+            if ancestor is source:
+                return
+            ancestor = ancestor.parent
         as_sibling = (
             destination.parent is not None
             and destination is not self.note_tree.context_node
             and (not destination.children or destination.is_collapsed)
         )
-        self.note_tree.push_undo(source.parent)
-        self.note_tree.push_undo(destination)
-        if as_sibling:
-            self.note_tree.push_undo(destination.parent)
+        # Both ends of the move are one undo step.
+        self.note_tree.push_undo(
+            source.parent, destination.parent if as_sibling else destination
+        )
         destination.paste_node_here(source, as_sibling=as_sibling)
         self.note_tree.index_nodes()
         self.note_tree.has_unsaved_operations = True

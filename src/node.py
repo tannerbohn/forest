@@ -1,3 +1,4 @@
+import itertools
 import logging
 import re
 import subprocess
@@ -8,12 +9,17 @@ from pytimeparse import parse
 
 logger = logging.getLogger(__name__)
 
+# Session-local node identity. Survives copy.deepcopy, so an undo snapshot's
+# nodes can be matched back to the live nodes they replace. Not persisted.
+_uid_counter = itertools.count()
+
 
 class Node:
     def __init__(self, parent, text, depth=0, is_collapsed=False):
         self.parent = parent
         self.text = text
         self.children = []
+        self.uid = next(_uid_counter)
         self.depth = depth
         self.is_collapsed = is_collapsed
         self.creation_time = datetime.now()

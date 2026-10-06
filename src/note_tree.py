@@ -213,7 +213,7 @@ class NoteTree:
                 "context_path": self._get_index_path(self.context_node),
             }
         self.apply_lines(new_lines)
-        self._undo_stack = [snap] if recover else []
+        self._undo_stack = [[snap]] if recover else []
         self._redo_stack = []
 
     def mark_synced(self, lines, mtime):
@@ -426,40 +426,97 @@ class NoteTree:
             "context_path": self._get_index_path(self.context_node),
         }
 
-    def push_undo(self, subtree_root):
-        """Save a snapshot before a mutation. Clears the redo stack."""
-        self._undo_stack.append(self._make_snapshot(subtree_root))
+    def push_undo(self, *subtree_roots):
+        """Save a snapshot before a mutation. Clears the redo stack.
+
+        Several roots (e.g. both ends of a move) form a single undo step. Roots
+        nested inside another given root are dropped, so the remaining subtrees
+        are disjoint — a mutation confined to them can't shift any of their
+        index paths, which keeps the paths valid at undo time."""
+        roots = []
+        for node in subtree_roots:
+            if node is None or any(node is r for r in roots):
+                continue
+            roots.append(node)
+        outermost = []
+        for node in roots:
+            ancestor = node.parent
+            while ancestor is not None and not any(ancestor is r for r in roots):
+                ancestor = ancestor.parent
+            if ancestor is None:
+                outermost.append(node)
+        self._undo_stack.append([self._make_snapshot(r) for r in outermost])
         if len(self._undo_stack) > self._undo_depth:
             self._undo_stack.pop(0)
         self._redo_stack.clear()
 
-    def _swap_subtree(self, snapshot):
-        """Replace the subtree at snapshot's path with the snapshot's copy.
-        Returns a reverse snapshot of what was replaced (for the opposite stack)."""
-        path = snapshot["path"]
-        current_node = self._resolve_index_path(path)
-        reverse = self._make_snapshot(current_node)
+    def _swap_subtree(self, snapshots):
+        """Replace the subtree at each snapshot's path with the snapshot's copy.
+        Returns the reverse snapshots of what was replaced (for the opposite stack)."""
+        reverse = [
+            self._make_snapshot(self._resolve_index_path(s["path"])) for s in snapshots
+        ]
 
-        restored = snapshot["subtree"]
-        if not path:
-            # Restoring root
-            self.root = restored
-            self.root.parent = None
-        else:
-            parent = self._resolve_index_path(path[:-1]) if len(path) > 1 else self.root
-            child_idx = path[-1]
-            restored.parent = parent
-            parent.children[child_idx] = restored
-            restored.depth = parent.depth + 1
-            restored.update_child_depth()
+        for snapshot in snapshots:
+            path = snapshot["path"]
+            restored = snapshot["subtree"]
+            if not path:
+                # Restoring root
+                self.root = restored
+                self.root.parent = None
+            else:
+                parent = self._resolve_index_path(path[:-1])
+                child_idx = path[-1]
+                restored.parent = parent
+                parent.children[child_idx] = restored
+                restored.depth = parent.depth + 1
+                restored.update_child_depth()
 
         # Restore context node via its saved index path
-        self.context_node = self._resolve_index_path(snapshot["context_path"])
+        self.context_node = self._resolve_index_path(snapshots[0]["context_path"])
+
+        # The swap replaced node objects; re-point copies/bookmarks at them.
+        self.prune_detached_refs([s["subtree"] for s in snapshots])
 
         self.index_nodes()
         self.update_visible_node_list()
         self.has_unsaved_operations = True
         return reverse
+
+    def _is_attached(self, node) -> bool:
+        """True if `node` is reachable from the live root."""
+        while node.parent is not None:
+            if not any(c is node for c in node.parent.children):
+                return False
+            node = node.parent
+        return node is self.root
+
+    def prune_detached_refs(self, restored_roots=()):
+        """Keep copied_nodes/bookmarks pointing only at live nodes. Entries whose
+        node was replaced by one of `restored_roots` (undo/redo) are re-pointed
+        at the replacement; entries no longer in the tree are dropped."""
+        live = {}
+        stack = list(restored_roots)
+        while stack:
+            node = stack.pop()
+            live[node.uid] = node
+            stack.extend(node.children)
+
+        def resolve(node):
+            node = live.get(node.uid, node)
+            return node if self._is_attached(node) else None
+
+        self.bookmarks = {
+            slot: n
+            for slot, n in ((s, resolve(n)) for s, n in self.bookmarks.items())
+            if n is not None
+        }
+        copied = []
+        for node in map(resolve, self.copied_nodes):
+            if node is not None and not any(node is c for c in copied):
+                copied.append(node)
+        self.copied_nodes[:] = copied
+        self._sort_copied_by_bookmarks()
 
     def pop_undo(self):
         """Undo the last mutation. Returns True if successful."""
@@ -580,6 +637,8 @@ class NoteTree:
             self.index_nodes()
             focus_node.delete_single()
         self.has_unsaved_operations = True
+        # A deleted branch may contain copied/bookmarked notes.
+        self.prune_detached_refs()
         self.update_visible_node_list()
 
     def add_journal_entry(self, entry):
